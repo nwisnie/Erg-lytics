@@ -4,5 +4,5 @@ ECE 49595SD Project
 
 **Contributors:** <br>
 Noah Wisniewski <br>
-Kassie Bankson
+Kassie Bankson <br>
 Aidan Mahaffey
