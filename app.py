@@ -1,4 +1,4 @@
-"""Entry point for the Rowlytics Flask application. This will fail flake888888888888888888888888888888888888888888888888888"""
+"""Entry point for the Rowlytics Flask application"""
 
 from __future__ import annotations
 
