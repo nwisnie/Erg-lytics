@@ -5,7 +5,7 @@ Rowlytics is a web based application that will help rowers to improve their rowi
 ## Contributors
 - Noah Wisniewski
 - Kassie Bankson
-- Aidan Mahaffey
+- Aidan Mahaffey :)
 - Evan Osborne
 
 ## Getting started
