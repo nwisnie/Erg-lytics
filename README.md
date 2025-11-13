@@ -17,11 +17,8 @@ Rowlytics is a web based application that will help rowers to improve their rowi
    ```
 4. Run the development server with hot reload:
    ```bash
-   make run
-   # or use the helper script which also bootstraps a .venv
    ./scripts/dev_server.sh
    ```
-5. Open http://127.0.0.1:5000 to see the landing page.
 
 ## Quality gates
 - `make lint` runs flake8, isort, and bandit.
