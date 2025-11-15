@@ -6,6 +6,7 @@ import os
 
 from flask import Flask
 
+from .api_routes import api_bp
 from .routes import public_bp
 
 
@@ -17,4 +18,6 @@ def create_app() -> Flask:
     )
 
     app.register_blueprint(public_bp)
+    app.register_blueprint(api_bp)
+
     return app

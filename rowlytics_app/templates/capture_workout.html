@@ -45,5 +45,13 @@
         <button class="btn btn--dark">Cancel</button>
       </div>
     </main>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        fetch("/api/increment/capture-workout", {
+          method: "POST"
+        })
+        .catch(err => console.error("Failed to increment:", err));
+      });
+    </script>
   </body>
 </html>

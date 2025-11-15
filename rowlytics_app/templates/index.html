@@ -96,6 +96,19 @@
       </section>
     </main>
 
+    <div style="text-align:center; margin: 40px 0; font-size: 1rem; color: #666;">
+      <span id="cw-views">...</span> workouts analyzed
+    </div>
+
+    <script>
+      fetch("/api/count/capture-workout")
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById("cw-views").textContent = data.count;
+        })
+        .catch(err => console.error("Failed to load count:", err));
+    </script>
+
     <footer class="footer">
       <div class="footer__socials">
         <a href="" target="_blank" rel="noreferrer">Twitter</a>

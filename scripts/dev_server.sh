@@ -12,4 +12,3 @@ PYTHON_BIN="${PYTHON:-python3}"
 export FLASK_APP=app.py
 export FLASK_ENV=development
 exec flask run --host="0.0.0.0" --port="${PORT:-5000}" --debug
-
