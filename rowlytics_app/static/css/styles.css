@@ -300,3 +300,19 @@ a {
     text-align: center;
   }
 }
+
+.pose-status {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #444;
+  color: #fff;
+  font-weight: 600;
+}
+.pose-status--hidden {
+  display: none;
+}
+.pose-status.ready {
+  background: #2ecc71;
+  color: #0b2a12;
+}

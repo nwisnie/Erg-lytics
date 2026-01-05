@@ -30,21 +30,24 @@
     </header>
 
     <main class="capture__main">
-      <section class="capture__frame">
-        <img
-            src="{{ url_for('static', filename='images/is-rowing-good-for-your-glutes.png') }}"
-            alt="Rowing example"
-            class="capture__image"
-        />
+      <div id="poseStatus" class="pose-status pose-status--hidden">Full body not in frame</div>
 
+      <section class="capture__frame">
+        <video
+          id="liveCamera"
+          class="capture__image"
+          playsinline
+          muted
+          poster="{{ url_for('static', filename='images/is-rowing-good-for-your-glutes.png') }}"
+        ></video>
       </section>
 
       <div class="capture__controls">
-        <button class="btn btn--subtle" disabled>Start</button>
-        <button class="btn btn--danger">Stop</button>
+        <button id="toggleCamera" class="btn btn--subtle">Start</button>
         <button class="btn btn--dark">Cancel</button>
       </div>
     </main>
+
     <script>
       document.addEventListener("DOMContentLoaded", () => {
         fetch("/api/increment/capture-workout", {
@@ -53,5 +56,8 @@
         .catch(err => console.error("Failed to increment:", err));
       });
     </script>
+
+    <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
+
   </body>
 </html>
