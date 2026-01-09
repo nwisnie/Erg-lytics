@@ -4,22 +4,89 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{{ card.title }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/styles.css') }}"
+    />
   </head>
-  <body class="detail">
-    <main class="detail__wrapper">
-      <a class="detail__back" href="{{ url_for('public.landing_page') }}">Back</a>
-      <section class="detail__card">
-        <img src="{{ url_for('static', filename=card.image_path) }}" alt="{{ card.title }}" />
-        <div>
-          <h1>{{ card.title }}</h1>
-          <p>{{ card.blurb }}</p>
-          <br>
-          <p>
-            This is a cool and awesome placeholder for now
-          </p>
+
+  <body class="capture">
+    <header class="capture__header">
+      <div class="capture__header-inner">
+        <div class="capture__branding">
+            <img
+                class="logo-mark__image"
+                src="{{ url_for('static', filename='images/erg_cool.png') }}"
+                alt="Rowlytics logo"
+            />
+
+          <span class="logo-mark__text">Rowlytics</span>
+        </div>
+
+        <a class="capture__back" href="{{ url_for('public.landing_page') }}">
+          Back
+        </a>
+      </div>
+    </header>
+          <div class="team-panel">
+            <h2>Team Members</h2>
+            <p class="team-panel__hint">Enter a team ID to load members.</p>
+
+            <form id="teamLookupForm" class="team-form">
+              <label class="team-form__label" for="teamIdInput">Team ID</label>
+              <div class="team-form__row">
+                <input
+                  id="teamIdInput"
+                  class="team-form__input"
+                  type="text"
+                  placeholder="team-1234"
+                  required
+                />
+                <button class="btn btn--subtle" type="submit">Load members</button>
+              </div>
+            </form>
+
+            <ul id="teamMembersList" class="team-members"></ul>
+
+            <h3>Add Member</h3>
+            <form id="teamAddForm" class="team-form">
+              <label class="team-form__label" for="memberUserId">User ID</label>
+              <input
+                id="memberUserId"
+                class="team-form__input"
+                type="text"
+                placeholder="cognito-sub-uuid"
+                required
+              />
+
+              <div class="team-form__row">
+                <div class="team-form__field">
+                  <label class="team-form__label" for="memberRole">Role</label>
+                  <select id="memberRole" class="team-form__input">
+                    <option value="rower">Rower</option>
+                    <option value="coach">Coach</option>
+                    <option value="asst coach">Assistant coach</option>
+                  </select>
+                </div>
+                <div class="team-form__field">
+                  <label class="team-form__label" for="memberStatus">Status</label>
+                  <select id="memberStatus" class="team-form__input">
+                    <option value="active">Active</option>
+                    <option value="invited">Invited</option>
+                    <option value="removed">Removed</option>
+                  </select>
+                </div>
+              </div>
+
+              <button class="btn" type="submit">Add member</button>
+            </form>
+
+            <p id="teamMessage" class="team-message" aria-live="polite"></p>
+          </div>
         </div>
       </section>
     </main>
+
+    <script src="{{ url_for('static', filename='js/team_view.js') }}" defer></script>
   </body>
 </html>
