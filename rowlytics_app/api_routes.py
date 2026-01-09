@@ -21,6 +21,8 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 # Database file stored next to this python file
 DB_PATH = os.path.join(os.path.dirname(__file__), "visits.db")
 
+# AWS resource names
+# If the names change we can quickly update them here or change env vars
 USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
 TEAM_MEMBERS_TABLE_NAME = os.getenv("ROWLYTICS_TEAM_MEMBERS_TABLE", "RowlyticsTeamMembers")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
