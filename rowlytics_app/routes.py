@@ -2,10 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 from typing import Iterable
+from urllib import parse
+from urllib import request as urlrequest
 
-from flask import Blueprint, abort, render_template
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 public_bp = Blueprint("public", __name__)
 
@@ -59,9 +72,64 @@ def _get_card(slug: str) -> TemplateCard | None:
     return next((card for card in TEMPLATE_CARDS if card.slug == slug), None)
 
 
+def _user_context() -> dict[str, str | None]:
+    return {
+        "user_id": session.get("user_id"),
+        "user_email": session.get("user_email"),
+        "user_name": session.get("user_name"),
+    }
+
+
+def _decode_token_payload(token: str) -> dict:
+    try:
+        payload_segment = token.split(".")[1]
+        padding = "=" * (-len(payload_segment) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
+        return json.loads(payload_bytes.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def _build_cognito_login_url() -> str | None:
+    domain = current_app.config.get("COGNITO_DOMAIN")
+    client_id = current_app.config.get("COGNITO_CLIENT_ID")
+    redirect_uri = current_app.config.get("COGNITO_REDIRECT_URI")
+    if not domain or not client_id or not redirect_uri:
+        return None
+    query = parse.urlencode({
+        "client_id": client_id,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "redirect_uri": redirect_uri,
+    })
+    return f"https://{domain}/oauth2/authorize?{query}"
+
+
+def _exchange_code_for_tokens(code: str) -> dict:
+    domain = current_app.config.get("COGNITO_DOMAIN")
+    client_id = current_app.config.get("COGNITO_CLIENT_ID")
+    redirect_uri = current_app.config.get("COGNITO_REDIRECT_URI")
+    if not domain or not client_id or not redirect_uri:
+        raise RuntimeError("Cognito configuration is missing")
+    token_url = f"https://{domain}/oauth2/token"
+    data = parse.urlencode({
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "code": code,
+        "redirect_uri": redirect_uri,
+    }).encode("utf-8")
+    req = urlrequest.Request(
+        token_url,
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    with urlrequest.urlopen(req) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 @public_bp.route("/")
 def landing_page() -> str:
-    return render_template("index.html")
+    return render_template("index.html", **_user_context())
 
 
 @public_bp.route("/templates/<slug>")
@@ -69,4 +137,66 @@ def template_detail(slug: str) -> str:
     card = _get_card(slug)
     if card is None:
         abort(404)
-    return render_template(card.template_name, card=card)
+    return render_template(card.template_name, card=card, **_user_context())
+
+
+@public_bp.route("/profile")
+def profile() -> str:
+    return render_template("profile.html", **_user_context())
+
+
+@public_bp.route("/signin")
+def signin() -> str:
+    if session.get("user_id"):
+        return redirect(url_for("public.landing_page"))
+    login_url = _build_cognito_login_url()
+    return render_template("sign_in.html", login_url=login_url)
+
+
+@public_bp.route("/auth/callback")
+def auth_callback() -> str:
+    code = request.args.get("code")
+    if not code:
+        return render_template("sign_in.html",
+                               login_url=_build_cognito_login_url(),
+                               error="Missing auth code."), 400
+    try:
+        tokens = _exchange_code_for_tokens(code)
+    except Exception as err:
+        return render_template(
+            "sign_in.html",
+            login_url=_build_cognito_login_url(),
+            error=f"Auth failed: {err}",
+        ), 400
+
+    id_token = tokens.get("id_token")
+    if not id_token:
+        return render_template(
+            "sign_in.html",
+            login_url=_build_cognito_login_url(),
+            error="Missing ID token from Cognito.",
+        ), 400
+
+    payload = _decode_token_payload(id_token)
+    session["id_token"] = id_token
+    session["access_token"] = tokens.get("access_token")
+    session["user_id"] = payload.get("sub")
+    session["user_email"] = payload.get("email")
+    session["user_name"] = payload.get("name") or payload.get("cognito:username")
+
+    return redirect(url_for("public.landing_page"))
+
+
+@public_bp.route("/logout")
+def logout() -> str:
+    session.clear()
+    domain = current_app.config.get("COGNITO_DOMAIN")
+    client_id = current_app.config.get("COGNITO_CLIENT_ID")
+    logout_uri = current_app.config.get("COGNITO_LOGOUT_REDIRECT_URI")
+    if not domain or not client_id or not logout_uri:
+        return redirect(url_for("public.signin"))
+    query = parse.urlencode({
+        "client_id": client_id,
+        "logout_uri": logout_uri,
+    })
+    return redirect(f"https://{domain}/logout?{query}")

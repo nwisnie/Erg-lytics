@@ -5,15 +5,16 @@ import sqlite3
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 try:
     import boto3
-    from boto3.dynamodb.conditions import Key
+    from boto3.dynamodb.conditions import Attr, Key
     from botocore.exceptions import ClientError
 except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
     boto3 = None
     Key = None
+    Attr = None
     ClientError = None
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -24,7 +25,10 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "visits.db")
 # AWS resource names
 # If the names change we can quickly update them here or change env vars
 USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
+TEAMS_TABLE_NAME = os.getenv("ROWLYTICS_TEAMS_TABLE", "RowlyticsTeams")
 TEAM_MEMBERS_TABLE_NAME = os.getenv("ROWLYTICS_TEAM_MEMBERS_TABLE", "RowlyticsTeamMembers")
+TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserIdIndex")
+TEAM_NAME_INDEX = os.getenv("ROWLYTICS_TEAMS_NAME_INDEX", "TeamNameIndex")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
 UPLOAD_BUCKET_NAME = os.getenv("ROWLYTICS_UPLOAD_BUCKET", "rowlyticsuploads")
 
@@ -40,6 +44,13 @@ def _get_ddb_tables():
     users_table = dynamodb.Table(USERS_TABLE_NAME)
     team_members_table = dynamodb.Table(TEAM_MEMBERS_TABLE_NAME)
     return users_table, team_members_table
+
+
+def _get_teams_table():
+    if boto3 is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+    dynamodb = boto3.resource("dynamodb")
+    return dynamodb.Table(TEAMS_TABLE_NAME)
 
 
 def _get_recordings_table():
@@ -79,6 +90,88 @@ def _batch_get_users(users_table, user_ids):
             if user_id:
                 users_by_id[user_id] = user
     return users_by_id
+
+
+def _fetch_team_members(users_table, team_members_table, team_id: str):
+    response = team_members_table.query(
+        KeyConditionExpression=Key("teamId").eq(team_id)
+    )
+    items = response.get("Items", [])
+    user_ids = [item.get("userId") for item in items if item.get("userId")]
+    users_by_id = _batch_get_users(users_table, user_ids)
+
+    members = []
+    for item in items:
+        user_id = item.get("userId")
+        user = users_by_id.get(user_id, {})
+        members.append({
+            "userId": user_id,
+            "memberRole": item.get("memberRole"),
+            "status": item.get("status"),
+            "joinedAt": item.get("joinedAt"),
+            "name": user.get("name"),
+            "email": user.get("email"),
+        })
+
+    return members
+
+
+def _get_team_membership(team_members_table, user_id: str):
+    try:
+        response = team_members_table.query(
+            IndexName=TEAM_MEMBERS_USER_INDEX,
+            KeyConditionExpression=Key("userId").eq(user_id),
+        )
+        items = response.get("Items", [])
+        return items[0] if items else None
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code in {"ValidationException", "ResourceNotFoundException"}:
+                if Attr is None:
+                    raise
+                response = team_members_table.scan(
+                    FilterExpression=Attr("userId").eq(user_id),
+                    Limit=1,
+                )
+                items = response.get("Items", [])
+                return items[0] if items else None
+        raise
+
+
+def _get_team(teams_table, team_id: str):
+    response = teams_table.get_item(Key={"teamId": team_id})
+    return response.get("Item")
+
+
+def _team_name_exists(teams_table, team_name: str) -> bool:
+    if not team_name:
+        return False
+
+    if Attr is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+
+    try:
+        response = teams_table.query(
+            IndexName=TEAM_NAME_INDEX,
+            KeyConditionExpression=Key("teamName").eq(team_name),
+            Limit=1,
+        )
+        if response.get("Items"):
+            return True
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    response = teams_table.scan(
+        FilterExpression=Attr("teamName").eq(team_name),
+        Limit=1,
+    )
+    return bool(response.get("Items"))
 
 
 def increment_page(slug: str):
@@ -131,33 +224,9 @@ def list_team_members(team_id):
         return jsonify({"error": str(err)}), 500
 
     try:
-        response = team_members_table.query(
-            KeyConditionExpression=Key("teamId").eq(team_id)
-        )
+        members = _fetch_team_members(users_table, team_members_table, team_id)
     except Exception as err:
         return jsonify({"error": "Unable to query team members", "detail": str(err)}), 500
-
-    items = response.get("Items", [])
-    user_ids = [item.get("userId") for item in items if item.get("userId")]
-    users_by_id = {}
-
-    try:
-        users_by_id = _batch_get_users(users_table, user_ids)
-    except Exception as err:
-        return jsonify({"error": "Unable to load user details", "detail": str(err)}), 500
-
-    members = []
-    for item in items:
-        user_id = item.get("userId")
-        user = users_by_id.get(user_id, {})
-        members.append({
-            "userId": user_id,
-            "memberRole": item.get("memberRole"),
-            "status": item.get("status"),
-            "joinedAt": item.get("joinedAt"),
-            "name": user.get("name"),
-            "email": user.get("email"),
-        })
 
     return jsonify({"teamId": team_id, "members": members})
 
@@ -177,9 +246,17 @@ def add_team_member(team_id):
     joined_at = data.get("joinedAt") or _now_iso()
 
     try:
-        _, team_members_table = _get_ddb_tables()
+        users_table, team_members_table = _get_ddb_tables()
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
+
+    try:
+        user_response = users_table.get_item(Key={"userId": user_id})
+    except Exception as err:
+        return jsonify({"error": "Unable to verify user", "detail": str(err)}), 500
+
+    if not user_response.get("Item"):
+        return jsonify({"error": "User does not exist"}), 404
 
     item = {
         "teamId": team_id,
@@ -203,6 +280,219 @@ def add_team_member(team_id):
         return jsonify({"error": "Unable to add team member", "detail": str(err)}), 500
 
     return jsonify({"status": "ok", "teamId": team_id, "userId": user_id}), 201
+
+
+@api_bp.route("/team/current", methods=["GET"])
+def current_team():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        users_table, team_members_table = _get_ddb_tables()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        membership = _get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team", "detail": str(err)}), 500
+
+    if not membership:
+        return jsonify({"teamId": None, "members": []})
+
+    team_id = membership.get("teamId")
+    try:
+        members = _fetch_team_members(users_table, team_members_table, team_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
+
+    return jsonify({
+        "teamId": team_id,
+        "members": members,
+        "memberRole": membership.get("memberRole"),
+        "status": membership.get("status"),
+    })
+
+
+@api_bp.route("/team/join", methods=["POST"])
+def join_team():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    team_id = (data.get("teamId") or "").strip()
+    if not team_id:
+        return jsonify({"error": "teamId is required"}), 400
+
+    member_role = (data.get("memberRole") or "rower").strip()
+    status = (data.get("status") or "active").strip()
+    joined_at = data.get("joinedAt") or _now_iso()
+
+    try:
+        users_table, team_members_table = _get_ddb_tables()
+        teams_table = _get_teams_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    team_item = _get_team(teams_table, team_id)
+    if not team_item:
+        return jsonify({"error": "Team not found"}), 404
+
+    try:
+        existing = _get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to check current team", "detail": str(err)}), 500
+
+    if existing and existing.get("teamId") != team_id:
+        return jsonify({
+            "error": "Already on a team. Leave your current team first.",
+            "teamId": existing.get("teamId"),
+        }), 409
+
+    if existing and existing.get("teamId") == team_id:
+        try:
+            members = _fetch_team_members(users_table, team_members_table, team_id)
+        except Exception as err:
+            return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
+        return jsonify({"status": "ok", "teamId": team_id, "members": members})
+
+    if not existing:
+        item = {
+            "teamId": team_id,
+            "userId": user_id,
+            "memberRole": member_role,
+            "status": status,
+            "joinedAt": joined_at,
+        }
+        try:
+            team_members_table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(teamId) AND attribute_not_exists(userId)",
+            )
+        except Exception as err:
+            error_code = None
+            if ClientError and isinstance(err, ClientError):
+                error_code = err.response.get("Error", {}).get("Code")
+            if error_code != "ConditionalCheckFailedException":
+                return jsonify({"error": "Unable to join team", "detail": str(err)}), 500
+
+    try:
+        members = _fetch_team_members(users_table, team_members_table, team_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
+
+    return jsonify({"status": "ok", "teamId": team_id, "members": members})
+
+
+@api_bp.route("/team/create", methods=["POST"])
+def create_team():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    team_name = (data.get("teamName") or "").strip()
+    if not team_name:
+        return jsonify({"error": "teamName is required"}), 400
+
+    created_at = data.get("createdAt") or _now_iso()
+
+    try:
+        users_table, team_members_table = _get_ddb_tables()
+        teams_table = _get_teams_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        existing = _get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to check current team", "detail": str(err)}), 500
+
+    if existing:
+        return jsonify({
+            "error": "Already on a team. Leave your current team first.",
+            "teamId": existing.get("teamId"),
+        }), 409
+
+    try:
+        if _team_name_exists(teams_table, team_name):
+            return jsonify({"error": "Team name already exists"}), 409
+    except Exception as err:
+        return jsonify({"error": "Unable to check team name", "detail": str(err)}), 500
+
+    team_id = uuid4().hex
+    team_item = {
+        "teamId": team_id,
+        "teamName": team_name,
+        "coachUserId": user_id,
+        "createdAt": created_at,
+    }
+
+    try:
+        teams_table.put_item(
+            Item=team_item,
+            ConditionExpression="attribute_not_exists(teamId)",
+        )
+    except Exception as err:
+        return jsonify({"error": "Unable to create team", "detail": str(err)}), 500
+
+    member_item = {
+        "teamId": team_id,
+        "userId": user_id,
+        "memberRole": "coach",
+        "status": "active",
+        "joinedAt": created_at,
+    }
+
+    try:
+        team_members_table.put_item(
+            Item=member_item,
+            ConditionExpression="attribute_not_exists(teamId) AND attribute_not_exists(userId)",
+        )
+    except Exception as err:
+        return jsonify({"error": "Unable to add team owner", "detail": str(err)}), 500
+
+    try:
+        members = _fetch_team_members(users_table, team_members_table, team_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
+
+    return jsonify({
+        "status": "ok",
+        "teamId": team_id,
+        "teamName": team_name,
+        "members": members,
+    }), 201
+
+
+@api_bp.route("/team/leave", methods=["DELETE"])
+def leave_team():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        _, team_members_table = _get_ddb_tables()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        membership = _get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to check current team", "detail": str(err)}), 500
+
+    if not membership:
+        return jsonify({"error": "User is not on a team"}), 404
+
+    team_id = membership.get("teamId")
+    try:
+        team_members_table.delete_item(Key={"teamId": team_id, "userId": user_id})
+    except Exception as err:
+        return jsonify({"error": "Unable to leave team", "detail": str(err)}), 500
+
+    return jsonify({"status": "ok", "teamId": team_id})
 
 
 @api_bp.route("/recordings/presign", methods=["POST"])

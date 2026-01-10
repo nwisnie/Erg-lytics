@@ -398,6 +398,28 @@ body {
   text-align: center;
 }
 
+.team-panel__header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.team-panel__section {
+  display: grid;
+  gap: 1rem;
+}
+
+.team-panel__section--hidden {
+  display: none;
+}
+
+.team-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
 .team-panel__hint {
   color: #94a3b8;
   font-size: 0.9rem;
@@ -590,6 +612,49 @@ body {
   font-size: 0.9rem;
 }
 
+.auth {
+  background: linear-gradient(180deg, #e2e8f0 0%, #f8fafc 100%);
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.auth__panel {
+  width: min(480px, 92vw);
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 2.5rem;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.12);
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.auth__brand {
+  display: grid;
+  justify-items: center;
+  gap: 0.25rem;
+}
+
+.auth .logo-mark__text {
+  font-size: clamp(2.2rem, 6vw, 3.2rem);
+  letter-spacing: 0.12em;
+}
+
+.auth__cta {
+  align-self: center;
+  padding: 0.85rem 2rem;
+}
+
+.auth__error {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 .snapshot .detail__wrapper {
   padding-top: 0;
   gap: 1rem;
@@ -631,4 +696,109 @@ body {
 .snapshot .recordings-message,
 .snapshot .recordings-empty {
   color: #1e293b;
+}
+
+.profile-card {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.profile-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.profile-item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+}
+
+.profile-label {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+  color: #cbd5f5;
+}
+
+.profile-value {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.profile-actions {
+  margin-top: 1.25rem;
+}
+
+.profile-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+
+.profile-modal[aria-hidden="true"] {
+  display: none;
+}
+
+.profile-modal__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+}
+
+.profile-modal__content {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 92vw);
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 20px;
+  padding: 2rem;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.2);
+  display: grid;
+  gap: 0.85rem;
+}
+
+.profile-modal__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  border: none;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profile-modal__subtitle {
+  color: #475569;
+}
+
+.profile-modal .profile-item {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+.profile-modal .profile-label {
+  color: #64748b;
+}
+
+.profile-modal .profile-value {
+  color: #0f172a;
+}
+
+.modal-open {
+  overflow: hidden;
 }

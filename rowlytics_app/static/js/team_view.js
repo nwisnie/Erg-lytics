@@ -1,14 +1,23 @@
 (() => {
-  const teamLookupForm = document.getElementById("teamLookupForm");
-  if (!teamLookupForm) return;
-
-  const teamIdInput = document.getElementById("teamIdInput");
+  const joinSection = document.getElementById("teamJoinSection");
+  const activeSection = document.getElementById("teamActiveSection");
+  const joinForm = document.getElementById("teamJoinForm");
+  const joinInput = document.getElementById("teamJoinId");
+  const createForm = document.getElementById("teamCreateForm");
+  const createInput = document.getElementById("teamCreateName");
+  const teamStatus = document.getElementById("teamStatus");
+  const teamIdDisplay = document.getElementById("teamIdDisplay");
   const teamMembersList = document.getElementById("teamMembersList");
   const teamAddForm = document.getElementById("teamAddForm");
   const memberUserId = document.getElementById("memberUserId");
   const memberRole = document.getElementById("memberRole");
   const memberStatus = document.getElementById("memberStatus");
+  const teamLeaveBtn = document.getElementById("teamLeaveBtn");
   const teamMessage = document.getElementById("teamMessage");
+
+  if (!joinSection || !activeSection) return;
+
+  let currentTeamId = null;
 
   const setMessage = (text, tone) => {
     teamMessage.textContent = text;
@@ -37,11 +46,7 @@
 
       const meta = document.createElement("div");
       meta.className = "team-members__meta";
-      const metaParts = [
-        member.email,
-        member.memberRole,
-        member.status,
-      ].filter(Boolean);
+      const metaParts = [member.email, member.memberRole, member.status].filter(Boolean);
       meta.textContent = metaParts.join(" · ");
 
       item.appendChild(title);
@@ -50,41 +55,122 @@
     });
   };
 
-  const loadMembers = async (teamId) => {
-    setMessage("Loading members...", "info");
+  const showJoin = () => {
+    joinSection.classList.remove("team-panel__section--hidden");
+    activeSection.classList.add("team-panel__section--hidden");
+    teamStatus.textContent = "You're not on a team yet.";
+    currentTeamId = null;
+    renderMembers([]);
+  };
+
+  const showActive = (teamId, members) => {
+    joinSection.classList.add("team-panel__section--hidden");
+    activeSection.classList.remove("team-panel__section--hidden");
+    teamStatus.textContent = "You're on a team.";
+    currentTeamId = teamId;
+    teamIdDisplay.textContent = `Team ID: ${teamId}`;
+    renderMembers(members);
+  };
+
+  const loadCurrentTeam = async () => {
+    setMessage("", "info");
     try {
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/members`);
+      const response = await fetch("/api/team/current");
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Unable to load members");
+        throw new Error(data.error || "Unable to load team");
       }
-      renderMembers(data.members);
-      setMessage(`Loaded ${data.members.length} member(s).`, "success");
-    } catch (error) {
-      renderMembers([]);
-      setMessage(error.message || "Unable to load members", "error");
+      if (!data.teamId) {
+        showJoin();
+        return;
+      }
+      showActive(data.teamId, data.members || []);
+    } catch (err) {
+      showJoin();
+      setMessage(err.message || "Unable to load team", "error");
     }
   };
 
-  teamLookupForm.addEventListener("submit", async (event) => {
+  joinForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const teamId = teamIdInput.value.trim();
+    const teamId = joinInput.value.trim();
     if (!teamId) {
-      setMessage("Enter a team ID first.", "error");
+      setMessage("Enter a team ID to join.", "error");
       return;
     }
-    await loadMembers(teamId);
+
+    setMessage("Joining team...", "info");
+    try {
+      const response = await fetch("/api/team/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to join team");
+      }
+      joinInput.value = "";
+      setMessage("Joined team.", "success");
+      showActive(data.teamId, data.members || []);
+    } catch (err) {
+      setMessage(err.message || "Unable to join team", "error");
+    }
+  });
+
+  if (createForm && createInput) {
+    createForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const teamName = createInput.value.trim();
+      if (!teamName) {
+        setMessage("Enter a team name to create.", "error");
+        return;
+      }
+
+      setMessage("Creating team...", "info");
+      try {
+        const response = await fetch("/api/team/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teamName })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to create team");
+        }
+        createInput.value = "";
+        setMessage("Team created. Share the Team ID to invite members.", "success");
+        showActive(data.teamId, data.members || []);
+      } catch (err) {
+        setMessage(err.message || "Unable to create team", "error");
+      }
+    });
+  }
+
+  teamLeaveBtn.addEventListener("click", async () => {
+    if (!currentTeamId) return;
+    setMessage("Leaving team...", "info");
+    try {
+      const response = await fetch("/api/team/leave", { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to leave team");
+      }
+      setMessage("Left team.", "success");
+      showJoin();
+    } catch (err) {
+      setMessage(err.message || "Unable to leave team", "error");
+    }
   });
 
   teamAddForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const teamId = teamIdInput.value.trim();
-    const userId = memberUserId.value.trim();
-
-    if (!teamId) {
-      setMessage("Enter a team ID first.", "error");
+    if (!currentTeamId) {
+      setMessage("Join a team first.", "error");
       return;
     }
+
+    const userId = memberUserId.value.trim();
     if (!userId) {
       setMessage("Enter a user ID to add.", "error");
       return;
@@ -92,11 +178,9 @@
 
     setMessage("Adding member...", "info");
     try {
-      const response = await fetch(`/api/teams/${encodeURIComponent(teamId)}/members`, {
+      const response = await fetch(`/api/teams/${encodeURIComponent(currentTeamId)}/members`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
           memberRole: memberRole.value,
@@ -111,9 +195,11 @@
 
       memberUserId.value = "";
       setMessage("Member added.", "success");
-      await loadMembers(teamId);
-    } catch (error) {
-      setMessage(error.message || "Unable to add member", "error");
+      await loadCurrentTeam();
+    } catch (err) {
+      setMessage(err.message || "Unable to add member", "error");
     }
   });
+
+  loadCurrentTeam();
 })();

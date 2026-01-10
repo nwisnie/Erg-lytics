@@ -9,13 +9,41 @@
       href="{{ url_for('static', filename='css/styles.css') }}"
     />
   </head>
-  <body class="capture" data-user-id="demo-user">
+  <body class="capture" data-user-id="{{ user_id }}">
 
-  <a class="profile-link" href="#" aria-label="Profile">
+  <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
     <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
     </svg>
   </a>
+
+  <div id="profileModal" class="profile-modal" aria-hidden="true">
+    <div class="profile-modal__overlay" data-profile-close></div>
+    <div class="profile-modal__content" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <button class="profile-modal__close" type="button" data-profile-close aria-label="Close profile">&times;</button>
+      <h2 id="profileModalTitle">Your Profile</h2>
+      <p class="profile-modal__subtitle">Account details for Rowlytics.</p>
+
+      <div class="profile-list">
+        <div class="profile-item">
+          <span class="profile-label">Name</span>
+          <span class="profile-value">{{ user_name or 'Not set' }}</span>
+        </div>
+        <div class="profile-item">
+          <span class="profile-label">Email</span>
+          <span class="profile-value">{{ user_email or 'Not set' }}</span>
+        </div>
+        <div class="profile-item">
+          <span class="profile-label">User ID</span>
+          <span class="profile-value">{{ user_id or 'Not set' }}</span>
+        </div>
+      </div>
+
+      <div class="profile-actions">
+        <a class="btn btn--dark" href="{{ url_for('public.logout') }}">Sign out</a>
+      </div>
+    </div>
+  </div>
 
 <header class="capture__header">
       <div class="capture__header-inner">
@@ -44,7 +72,7 @@
           class="capture__image"
           playsinline
           muted
-          poster="{{ url_for('static', filename='images/is-rowing-good-for-your-glutes.png') }}"
+          poster="{{ url_for('static', filename='images/webcam.png') }}"
         ></video>
       </section>
 
@@ -65,5 +93,6 @@
 
     <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
 
-  </body>
+    <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
+</body>
 </html>

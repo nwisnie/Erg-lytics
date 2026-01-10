@@ -1,6 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Rowlytics backend resources (DynamoDB tables)
+Description: Rowlytics backend resources (DynamoDB tables + Cognito + S3)
+
+Parameters:
+  CognitoDomainPrefix:
+    Type: String
+    Default: rowlytics-auth
+    Description: Unique prefix for the Cognito hosted UI domain.
 
 Resources:
   UsersTable:
@@ -11,9 +17,18 @@ Resources:
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
+        - AttributeName: email
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
   TeamsTable:
     Type: AWS::DynamoDB::Table
@@ -23,9 +38,18 @@ Resources:
       AttributeDefinitions:
         - AttributeName: teamId
           AttributeType: S
+        - AttributeName: teamName
+          AttributeType: S
       KeySchema:
         - AttributeName: teamId
           KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: TeamNameIndex
+          KeySchema:
+            - AttributeName: teamName
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
   TeamMembersTable:
     Type: AWS::DynamoDB::Table
@@ -42,6 +66,15 @@ Resources:
           KeyType: HASH
         - AttributeName: userId
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: teamId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   RecordingsTable:
     Type: AWS::DynamoDB::Table
@@ -75,6 +108,46 @@ Resources:
               - "*"
             MaxAge: 300
 
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: RowlyticsUserPool
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: RowlyticsUserPoolClient
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AllowedOAuthFlowsUserPoolClient: true
+      CallbackURLs:
+        - http://localhost:5000/auth/callback
+      LogoutURLs:
+        - http://localhost:5000/signin
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref CognitoDomainPrefix
+      UserPoolId: !Ref UserPool
+
 Outputs:
   UsersTableName:
     Value: !Ref UsersTable
@@ -86,3 +159,9 @@ Outputs:
     Value: !Ref RecordingsTable
   UploadBucketName:
     Value: !Ref UploadBucket
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  UserPoolDomain:
+    Value: !Ref UserPoolDomain
