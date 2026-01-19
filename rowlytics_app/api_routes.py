@@ -31,6 +31,9 @@ TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserId
 TEAM_NAME_INDEX = os.getenv("ROWLYTICS_TEAMS_NAME_INDEX", "TeamNameIndex")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
 UPLOAD_BUCKET_NAME = os.getenv("ROWLYTICS_UPLOAD_BUCKET", "rowlyticsuploads")
+COGNITO_USER_POOL_ID = os.getenv("ROWLYTICS_COGNITO_USER_POOL_ID", "")
+
+ALLOWED_TEAM_ROLES = {"coach", "rower"}
 
 
 def _now_iso() -> str:
@@ -70,6 +73,36 @@ def _get_s3_client():
     return boto3.client("s3")
 
 
+def _get_cognito_client():
+    if boto3 is None:
+        raise RuntimeError("boto3 is required for Cognito access")
+    return boto3.client("cognito-idp")
+
+
+def _delete_cognito_user(user_id: str, email: str | None, access_token: str | None):
+    client = _get_cognito_client()
+    last_error = None
+
+    if access_token:
+        try:
+            client.delete_user(AccessToken=access_token)
+            return
+        except Exception as err:
+            last_error = err
+
+    username = email or user_id
+    if not COGNITO_USER_POOL_ID or not username:
+        raise RuntimeError("Missing Cognito pool id or username")
+
+    try:
+        client.admin_delete_user(UserPoolId=COGNITO_USER_POOL_ID, Username=username)
+        return
+    except Exception as err:
+        last_error = err
+
+    raise RuntimeError(str(last_error) if last_error else "Unable to delete Cognito user")
+
+
 def _batch_get_users(users_table, user_ids):
     if not user_ids:
         return {}
@@ -104,10 +137,14 @@ def _fetch_team_members(users_table, team_members_table, team_id: str):
     for item in items:
         user_id = item.get("userId")
         user = users_by_id.get(user_id, {})
+        raw_role = item.get("memberRole")
+        role = raw_role.lower() if isinstance(raw_role, str) else "rower"
+        if role not in ALLOWED_TEAM_ROLES:
+            role = "coach" if "coach" in role else "rower"
+
         members.append({
             "userId": user_id,
-            "memberRole": item.get("memberRole"),
-            "status": item.get("status"),
+            "memberRole": role,
             "joinedAt": item.get("joinedAt"),
             "name": user.get("name"),
             "email": user.get("email"),
@@ -142,6 +179,77 @@ def _get_team_membership(team_members_table, user_id: str):
 def _get_team(teams_table, team_id: str):
     response = teams_table.get_item(Key={"teamId": team_id})
     return response.get("Item")
+
+
+def _query_all(table, **kwargs):
+    items = []
+    last_key = None
+    while True:
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        response = table.query(**kwargs)
+        items.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return items
+
+
+def _scan_all(table, **kwargs):
+    items = []
+    last_key = None
+    while True:
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        response = table.scan(**kwargs)
+        items.extend(response.get("Items", []))
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return items
+
+
+def _list_team_memberships(team_members_table, user_id: str):
+    try:
+        return _query_all(
+            team_members_table,
+            IndexName=TEAM_MEMBERS_USER_INDEX,
+            KeyConditionExpression=Key("userId").eq(user_id),
+        )
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code in {"ValidationException", "ResourceNotFoundException"}:
+                if Attr is None:
+                    raise
+                return _scan_all(
+                    team_members_table,
+                    FilterExpression=Attr("userId").eq(user_id),
+                )
+        raise
+
+
+def _list_team_members_by_team(team_members_table, team_id: str):
+    return _query_all(
+        team_members_table,
+        KeyConditionExpression=Key("teamId").eq(team_id),
+    )
+
+
+def _list_owned_teams(teams_table, user_id: str):
+    if Attr is None:
+        return []
+    return _scan_all(
+        teams_table,
+        FilterExpression=Attr("coachUserId").eq(user_id),
+    )
+
+
+def _list_recordings(recordings_table, user_id: str):
+    return _query_all(
+        recordings_table,
+        KeyConditionExpression=Key("userId").eq(user_id),
+    )
 
 
 def _team_name_exists(teams_table, team_name: str) -> bool:
@@ -242,7 +350,10 @@ def add_team_member(team_id):
         return jsonify({"error": "userId is required"}), 400
 
     member_role = (data.get("memberRole") or "rower").strip()
-    status = (data.get("status") or "active").strip()
+    member_role = member_role.lower()
+    if member_role not in ALLOWED_TEAM_ROLES:
+        return jsonify({"error": "memberRole must be coach or rower"}), 400
+
     joined_at = data.get("joinedAt") or _now_iso()
 
     try:
@@ -262,7 +373,6 @@ def add_team_member(team_id):
         "teamId": team_id,
         "userId": user_id,
         "memberRole": member_role,
-        "status": status,
         "joinedAt": joined_at,
     }
 
@@ -311,7 +421,6 @@ def current_team():
         "teamId": team_id,
         "members": members,
         "memberRole": membership.get("memberRole"),
-        "status": membership.get("status"),
     })
 
 
@@ -326,8 +435,10 @@ def join_team():
     if not team_id:
         return jsonify({"error": "teamId is required"}), 400
 
-    member_role = (data.get("memberRole") or "rower").strip()
-    status = (data.get("status") or "active").strip()
+    member_role = (data.get("memberRole") or "rower").strip().lower()
+    if member_role not in ALLOWED_TEAM_ROLES:
+        return jsonify({"error": "memberRole must be coach or rower"}), 400
+
     joined_at = data.get("joinedAt") or _now_iso()
 
     try:
@@ -363,7 +474,6 @@ def join_team():
             "teamId": team_id,
             "userId": user_id,
             "memberRole": member_role,
-            "status": status,
             "joinedAt": joined_at,
         }
         try:
@@ -442,7 +552,6 @@ def create_team():
         "teamId": team_id,
         "userId": user_id,
         "memberRole": "coach",
-        "status": "active",
         "joinedAt": created_at,
     }
 
@@ -493,6 +602,106 @@ def leave_team():
         return jsonify({"error": "Unable to leave team", "detail": str(err)}), 500
 
     return jsonify({"status": "ok", "teamId": team_id})
+
+
+@api_bp.route("/account/name", methods=["POST"])
+def update_account_name():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    try:
+        users_table, _ = _get_ddb_tables()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    update_expr = "SET #name = :name, updatedAt = :updatedAt"
+    expr_attr_names = {"#name": "name"}
+    expr_attr_values = {":name": name, ":updatedAt": _now_iso()}
+
+    user_email = session.get("user_email")
+    if user_email:
+        update_expr += ", email = if_not_exists(email, :email)"
+        expr_attr_values[":email"] = user_email
+
+    try:
+        users_table.update_item(
+            Key={"userId": user_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_attr_names,
+            ExpressionAttributeValues=expr_attr_values,
+        )
+    except Exception as err:
+        return jsonify({"error": "Unable to update name", "detail": str(err)}), 500
+
+    session["user_name"] = name
+    return jsonify({"status": "ok", "name": name})
+
+
+@api_bp.route("/account/delete", methods=["POST"])
+def delete_account():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        users_table, team_members_table = _get_ddb_tables()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        _delete_cognito_user(user_id, session.get("user_email"), session.get("access_token"))
+    except Exception as err:
+        return jsonify({"error": "Unable to delete Cognito user", "detail": str(err)}), 500
+
+    recordings_table = None
+    s3 = None
+    try:
+        recordings_table = _get_recordings_table()
+        s3 = _get_s3_client()
+    except RuntimeError:
+        recordings_table = None
+        s3 = None
+
+    if recordings_table is not None:
+        try:
+            recordings = _list_recordings(recordings_table, user_id)
+        except Exception as err:
+            return jsonify({"error": "Unable to load recordings", "detail": str(err)}), 500
+
+        for item in recordings:
+            recording_id = item.get("recordingId")
+            object_key = item.get("objectKey")
+            if s3 and object_key:
+                try:
+                    s3.delete_object(Bucket=UPLOAD_BUCKET_NAME, Key=object_key)
+                except Exception:
+                    pass
+            if recording_id:
+                recordings_table.delete_item(Key={"userId": user_id, "recordingId": recording_id})
+
+    try:
+        memberships = _list_team_memberships(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team memberships", "detail": str(err)}), 500
+
+    for membership in memberships:
+        team_id = membership.get("teamId")
+        if team_id:
+            team_members_table.delete_item(Key={"teamId": team_id, "userId": user_id})
+
+    try:
+        users_table.delete_item(Key={"userId": user_id})
+    except Exception as err:
+        return jsonify({"error": "Unable to delete user", "detail": str(err)}), 500
+
+    session.clear()
+    return jsonify({"status": "ok"})
 
 
 @api_bp.route("/recordings/presign", methods=["POST"])

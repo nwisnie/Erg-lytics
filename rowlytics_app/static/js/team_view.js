@@ -11,7 +11,6 @@
   const teamAddForm = document.getElementById("teamAddForm");
   const memberUserId = document.getElementById("memberUserId");
   const memberRole = document.getElementById("memberRole");
-  const memberStatus = document.getElementById("memberStatus");
   const teamLeaveBtn = document.getElementById("teamLeaveBtn");
   const teamMessage = document.getElementById("teamMessage");
 
@@ -46,7 +45,7 @@
 
       const meta = document.createElement("div");
       meta.className = "team-members__meta";
-      const metaParts = [member.email, member.memberRole, member.status].filter(Boolean);
+      const metaParts = [member.email, member.memberRole].filter(Boolean);
       meta.textContent = metaParts.join(" · ");
 
       item.appendChild(title);
@@ -184,7 +183,6 @@
         body: JSON.stringify({
           userId,
           memberRole: memberRole.value,
-          status: memberStatus.value,
           joinedAt: new Date().toISOString()
         })
       });

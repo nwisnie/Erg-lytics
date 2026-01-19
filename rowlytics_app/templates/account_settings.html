@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ card.title }}</title>
+    <title>Account Settings | Rowlytics</title>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/styles.css') }}"
     />
   </head>
-  <body class="capture">
+  <body class="capture account-settings">
     <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
       <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
@@ -53,7 +53,6 @@
             src="{{ url_for('static', filename='images/erg_cool.png') }}"
             alt="Rowlytics logo"
           />
-
           <span class="logo-mark__text">Rowlytics</span>
         </div>
 
@@ -66,87 +65,46 @@
     <main class="capture__main">
       <section class="team-panel team-panel--centered">
         <div class="team-panel__header">
-          <h2>Team</h2>
-          <p id="teamStatus">Checking your team status...</p>
+          <h2>Account Settings</h2>
+          <p>Update your display name or delete your account.</p>
         </div>
 
-        <section id="teamJoinSection" class="team-panel__section">
-          <h3>Join a team</h3>
-          <p class="team-panel__hint">Enter a team ID to get started.</p>
-          <form id="teamJoinForm" class="team-form">
-            <label class="team-form__label" for="teamJoinId">Team ID</label>
-            <div class="team-form__row">
-              <input
-                id="teamJoinId"
-                class="team-form__input"
-                type="text"
-                placeholder="team-1234"
-                required
-              />
-              <button class="btn" type="submit">Join team</button>
-            </div>
-          </form>
-
-          <h3>Create a team</h3>
-          <p class="team-panel__hint">Pick a name and we will generate a Team ID.</p>
-          <form id="teamCreateForm" class="team-form">
-            <label class="team-form__label" for="teamCreateName">Team name</label>
-            <div class="team-form__row">
-              <input
-                id="teamCreateName"
-                class="team-form__input"
-                type="text"
-                placeholder="Rowlytics Varsity"
-                required
-              />
-              <button class="btn btn--dark" type="submit">Create team</button>
-            </div>
-          </form>
-        </section>
-
-        <section id="teamActiveSection" class="team-panel__section team-panel__section--hidden">
-          <div class="team-panel__row">
-            <div>
-              <h3>Current team</h3>
-              <p id="teamIdDisplay" class="team-panel__hint"></p>
-            </div>
-            <button id="teamLeaveBtn" class="btn btn--danger" type="button">Leave team</button>
-          </div>
-
-          <h3>Members</h3>
-          <ul id="teamMembersList" class="team-members"></ul>
-
-          <h3>Add Member</h3>
-          <form id="teamAddForm" class="team-form">
-            <label class="team-form__label" for="memberUserId">User ID</label>
+        <form id="accountNameForm" class="team-form">
+          <label class="team-form__label" for="accountName">Display name</label>
+          <div class="team-form__row">
             <input
-              id="memberUserId"
+              id="accountName"
               class="team-form__input"
               type="text"
-              placeholder="cognito-sub-uuid"
+              name="name"
+              value="{{ user_name or '' }}"
+              placeholder="Your name"
               required
             />
+            <button class="btn" type="submit">Save</button>
+          </div>
+        </form>
 
-            <div class="team-form__row">
-              <div class="team-form__field">
-                <label class="team-form__label" for="memberRole">Role</label>
-                <select id="memberRole" class="team-form__input">
-                  <option value="rower">Rower</option>
-                  <option value="coach">Coach</option>
-                </select>
-              </div>
+        <div class="team-panel__section">
+          <h3>Delete account</h3>
+          <p class="team-panel__hint">This removes your profile, team memberships, and recordings.</p>
+
+          <div id="accountDeleteConfirm" class="account-delete account-delete--hidden">
+            <p class="account-delete__text">Are you sure you want to delete your account?</p>
+            <div class="account-delete__actions">
+              <button id="confirmDeleteAccount" class="btn btn--danger" type="button">Yes, delete</button>
+              <button id="cancelDeleteAccount" class="btn btn--subtle" type="button">Cancel</button>
             </div>
+          </div>
 
-            <button class="btn" type="submit">Add member</button>
-          </form>
+          <button id="deleteAccountBtn" class="btn btn--danger" type="button">Delete account</button>
+        </div>
 
-        </section>
-
-        <p id="teamMessage" class="team-message" aria-live="polite"></p>
+        <p id="accountMessage" class="team-message" aria-live="polite"></p>
       </section>
     </main>
 
-    <script src="{{ url_for('static', filename='js/team_view.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/account_settings.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
   </body>
 </html>

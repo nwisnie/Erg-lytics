@@ -6,6 +6,10 @@ import {
 const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
 const poseStatus = document.getElementById("poseStatus");
+const overlay = document.getElementById("poseOverlay");
+const overlayCtx = overlay ? overlay.getContext("2d") : null;
+const viewport = document.querySelector(".capture__viewport");
+const placeholder = document.getElementById("capturePlaceholder");
 const MP_BASE = "/static/mediapipe";
 const MP_WASM_PATH = `${MP_BASE}/wasm`;
 const MP_MODEL_PATH = `${MP_BASE}/pose_landmarker_lite.task`;
@@ -31,6 +35,10 @@ let recorderStopTimeout = null;
 let recordingCancelled = false;
 let nextAllowedRecordTime = 0;
 let lastInFrame = false;
+
+let overlayWidth = 0;
+let overlayHeight = 0;
+let overlayDpr = 1;
 
 // for final thing maybe we
 // only require like left should hip and knee
@@ -66,6 +74,69 @@ function hidePoseStatus() {
   poseStatus.classList.add(statusHiddenClass);
 }
 
+function resizeOverlay() {
+  if (!overlay || !overlayCtx) return;
+  const rect = video.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (rect.width === overlayWidth && rect.height === overlayHeight && dpr === overlayDpr) {
+    return;
+  }
+  overlayWidth = rect.width;
+  overlayHeight = rect.height;
+  overlayDpr = dpr;
+  overlay.width = Math.round(rect.width * dpr);
+  overlay.height = Math.round(rect.height * dpr);
+  overlay.style.width = `${rect.width}px`;
+  overlay.style.height = `${rect.height}px`;
+  overlayCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function clearOverlay() {
+  if (!overlayCtx) return;
+  resizeOverlay();
+  overlayCtx.clearRect(0, 0, overlayWidth, overlayHeight);
+}
+
+function setViewportActive(active) {
+  if (!viewport) return;
+  viewport.classList.toggle("capture__viewport--active", active);
+  if (placeholder) {
+    placeholder.setAttribute("aria-hidden", active ? "true" : "false");
+  }
+}
+
+function drawLandmarks(landmarks) {
+  if (!overlayCtx) return;
+  resizeOverlay();
+  overlayCtx.clearRect(0, 0, overlayWidth, overlayHeight);
+  if (!landmarks || landmarks.length === 0) return;
+
+  const lms = landmarks[0] || [];
+  const videoWidth = video.videoWidth || overlayWidth;
+  const videoHeight = video.videoHeight || overlayHeight;
+  if (!videoWidth || !videoHeight) return;
+
+  const scale = Math.min(overlayWidth / videoWidth, overlayHeight / videoHeight);
+  const offsetX = (overlayWidth - videoWidth * scale) / 2;
+  const offsetY = (overlayHeight - videoHeight * scale) / 2;
+
+  overlayCtx.fillStyle = "rgba(34, 197, 94, 0.9)";
+  overlayCtx.strokeStyle = "rgba(15, 23, 42, 0.55)";
+  overlayCtx.lineWidth = 1;
+
+  for (const lm of lms) {
+    if (!lm) continue;
+    if (lm.visibility != null && lm.visibility < 0.3) continue;
+    const x = offsetX + lm.x * videoWidth * scale;
+    const y = offsetY + lm.y * videoHeight * scale;
+    overlayCtx.beginPath();
+    overlayCtx.arc(x, y, 4, 0, Math.PI * 2);
+    overlayCtx.fill();
+    overlayCtx.stroke();
+  }
+}
+
 async function ensurePoseReady() {
   if (poseReady) return true;
   try {
@@ -79,6 +150,7 @@ async function ensurePoseReady() {
       ? "Pose assets missing. Run scripts/setup_mediapipe_assets.sh"
       : "Pose model failed to load";
     poseStatus.classList.remove("ready");
+    clearOverlay();
     return false;
   }
 }
@@ -271,6 +343,7 @@ async function startCamera() {
   try {
     video.srcObject = stream;
     await video.play();
+    resizeOverlay();
   } catch (err) {
     console.error("Camera preview failed:", err);
     stopCamera();
@@ -278,9 +351,11 @@ async function startCamera() {
     return;
   }
 
+  setViewportActive(true);
   showPoseStatus();
   poseStatus.textContent = defaultStatusText;
   poseStatus.classList.remove("ready");
+  clearOverlay();
 
   const isPoseReady = await ensurePoseReady();
   running = isPoseReady;
@@ -308,6 +383,8 @@ function stopCamera() {
   video.load();
 
   poseStatus.classList.remove("ready");
+  clearOverlay();
+  setViewportActive(false);
   poseStatus.textContent = defaultStatusText;
   hidePoseStatus();
   lastVideoTime = -1;
@@ -334,6 +411,7 @@ function loop() {
     lastVideoTime = now;
     try {
       const result = poseLandmarker.detectForVideo(video, performance.now());
+      drawLandmarks(result.landmarks);
       const inFrame = fullBodyInFrame(result.landmarks);
 
       lastInFrame = inFrame;

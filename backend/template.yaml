@@ -134,6 +134,7 @@ Resources:
         - email
         - openid
         - profile
+        - aws.cognito.signin.user.admin
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
         - http://localhost:5000/auth/callback

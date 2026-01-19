@@ -308,12 +308,67 @@ body {
   justify-content: center;
 }
 
-.capture__image {
+.capture__viewport {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.capture__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   display: block;
+  opacity: 0;
+}
+
+.capture__viewport--active .capture__image {
+  opacity: 1;
+}
+
+.capture__placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  padding: 0.6rem;
+  background: #ffffff;
+}
+
+.capture__placeholder-text {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.15;
+  color: #0f172a;
+}
+
+.capture__placeholder-image {
+  max-width: 80%;
+  max-height: 58%;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius);
+}
+
+.capture__viewport--active .capture__placeholder {
+  display: none;
+}
+
+.capture__overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .capture__controls {
@@ -734,6 +789,30 @@ body {
 
 .profile-actions {
   margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.account-delete {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.account-delete__text {
+  margin: 0;
+  font-weight: 600;
+}
+
+.account-delete__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.account-delete--hidden {
+  display: none;
 }
 
 .profile-modal {

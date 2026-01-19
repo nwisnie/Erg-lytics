@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable
 from urllib import parse
 from urllib import request as urlrequest
+
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
+    boto3 = None
+    ClientError = None
 
 from flask import (
     Blueprint,
@@ -31,6 +40,8 @@ class TemplateCard:
     image_path: str
     template_name: str
 
+
+USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
 
 TEMPLATE_CARDS: tuple[TemplateCard, ...] = (
     TemplateCard(
@@ -68,6 +79,53 @@ def _iter_cards() -> Iterable[TemplateCard]:
     return iter(TEMPLATE_CARDS)
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_users_table():
+    if boto3 is None:
+        return None
+    dynamodb = boto3.resource("dynamodb")
+    return dynamodb.Table(USERS_TABLE_NAME)
+
+
+def _sync_user_profile(user_id: str | None, email: str | None, name: str | None) -> str | None:
+    if not user_id:
+        return name
+    table = _get_users_table()
+    if table is None:
+        return name
+
+    safe_name = name or (email.split("@")[0] if email else "New Rower")
+    now = _now_iso()
+
+    update_expr = (
+        "SET #name = if_not_exists(#name, :name), "
+        "createdAt = if_not_exists(createdAt, :createdAt)"
+    )
+    expr_attr_names = {"#name": "name"}
+    expr_attr_values = {":name": safe_name, ":createdAt": now}
+
+    if email:
+        update_expr += ", email = if_not_exists(email, :email)"
+        expr_attr_values[":email"] = email
+
+    try:
+        response = table.update_item(
+            Key={"userId": user_id},
+            UpdateExpression=update_expr,
+            ExpressionAttributeNames=expr_attr_names,
+            ExpressionAttributeValues=expr_attr_values,
+            ReturnValues="ALL_NEW",
+        )
+    except Exception:
+        return name
+
+    attributes = response.get("Attributes") or {}
+    return attributes.get("name") or name
+
+
 def _get_card(slug: str) -> TemplateCard | None:
     return next((card for card in TEMPLATE_CARDS if card.slug == slug), None)
 
@@ -99,7 +157,7 @@ def _build_cognito_login_url() -> str | None:
     query = parse.urlencode({
         "client_id": client_id,
         "response_type": "code",
-        "scope": "openid email profile",
+        "scope": "openid email profile aws.cognito.signin.user.admin",
         "redirect_uri": redirect_uri,
     })
     return f"https://{domain}/oauth2/authorize?{query}"
@@ -145,6 +203,11 @@ def profile() -> str:
     return render_template("profile.html", **_user_context())
 
 
+@public_bp.route("/account-settings")
+def account_settings() -> str:
+    return render_template("account_settings.html", **_user_context())
+
+
 @public_bp.route("/signin")
 def signin() -> str:
     if session.get("user_id"):
@@ -183,6 +246,14 @@ def auth_callback() -> str:
     session["user_id"] = payload.get("sub")
     session["user_email"] = payload.get("email")
     session["user_name"] = payload.get("name") or payload.get("cognito:username")
+
+    stored_name = _sync_user_profile(
+        session.get("user_id"),
+        session.get("user_email"),
+        session.get("user_name"),
+    )
+    if stored_name:
+        session["user_name"] = stored_name
 
     return redirect(url_for("public.landing_page"))
 
