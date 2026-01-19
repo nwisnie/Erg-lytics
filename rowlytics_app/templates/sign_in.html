@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sign In | Rowlytics</title>
+    <title>Sign In | Erglytics</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
   </head>
   <body class="auth">
@@ -12,13 +12,13 @@
         <img
           class="logo-mark__image"
           src="{{ url_for('static', filename='images/erg_cool.png') }}"
-          alt="Rowlytics logo"
+          alt="Erglytics logo"
         />
-        <span class="logo-mark__text">Rowlytics</span>
+        <span class="logo-mark__text">Erglytics</span>
       </div>
 
       <h1>Sign in to continue</h1>
-      <p>Rowlytics uses AWS Cognito to protect your data.</p>
+      <p>Erglytics uses AWS Cognito to protect your data.</p>
 
       {% if error %}
         <p class="auth__error">{{ error }}</p>
