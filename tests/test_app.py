@@ -11,7 +11,7 @@ from rowlytics_app import create_app
 @pytest.fixture()
 def app() -> Flask:
     flask_app = create_app()
-    flask_app.config.update(TESTING=True)
+    flask_app.config.update(TESTING=True, AUTH_REQUIRED=False)
     return flask_app
 
 
@@ -31,7 +31,7 @@ def test_landing_page_renders_expected_copy(client: FlaskClient) -> None:
 
     html = response.get_data(as_text=True)
     expected_snippets = [
-        "Rowlytics",
+        "Erglytics",
     ]
     for snippet in expected_snippets:
         assert snippet in html
