@@ -19,6 +19,19 @@ Erglytics/<br>
 ├─ tests/<br>
 └─ docs/<br>
 
+**Descriptions:**
+- **backend/** houses our SAM template and deploy config
+- **rowlytics_app/** contains our Flask app package
+- **cv/** will contain our CV pipeline (future)
+- **scripts/** is used for setup and other specific actions
+- **tests/** has unit and integration tests
+- **docs/** contains our documentation
+
+**References:**
+- Flask Structuring: https://flask.palletsprojects.com/en/3.0.x/blueprints/
+- Python Project Layout: https://packaging.python.org/en/latest/tutorials/packaging-projects/
+- AWS SAM: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-template-basics.html
+
 ## Branching
 
 ## Code Developement and Review Policy
