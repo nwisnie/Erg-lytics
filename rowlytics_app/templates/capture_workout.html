@@ -95,15 +95,6 @@
       </div>
     </main>
 
-    <script>
-      document.addEventListener("DOMContentLoaded", () => {
-        fetch("/api/increment/capture-workout", {
-          method: "POST"
-        })
-        .catch(err => console.error("Failed to increment:", err));
-      });
-    </script>
-
     <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
 
     <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
