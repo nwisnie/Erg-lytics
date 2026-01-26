@@ -36,6 +36,8 @@ def lambda_handler(event, context):
             "image/gif",
             "image/webp",
             "image/svg+xml",
+            "image/vnd.microsoft.icon",
+            "image/x-icon",
             "application/octet-stream",
             "video/webm",
         },

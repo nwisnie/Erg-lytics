@@ -163,3 +163,9 @@ def logout() -> str:
         "logout_uri": logout_uri,
     })
     return redirect(f"https://{domain}/logout?{query}")
+
+
+@public_bp.route("/favicon.ico")
+def favicon_redirect():
+    """Redirect /favicon.ico to /static/favicon.ico to handle browser requests."""
+    return redirect(url_for("static", filename="favicon.ico"), code=301)

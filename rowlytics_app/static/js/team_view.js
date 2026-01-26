@@ -1,4 +1,14 @@
 (() => {
+  console.log("[team-view] Script initializing");
+
+  // Helper function to build correct API URLs with stage prefix
+  const getApiUrl = (path) => {
+    const currentPath = window.location.pathname;
+    const match = currentPath.match(/^(\/[^/]+)?/); // Match /Prod or similar stage
+    const stagePath = match ? match[0] : '';
+    return stagePath + path;
+  };
+
   const joinSection = document.getElementById("teamJoinSection");
   const activeSection = document.getElementById("teamActiveSection");
   const joinForm = document.getElementById("teamJoinForm");
@@ -14,7 +24,11 @@
   const teamLeaveBtn = document.getElementById("teamLeaveBtn");
   const teamMessage = document.getElementById("teamMessage");
 
-  if (!joinSection || !activeSection) return;
+  if (!joinSection || !activeSection) {
+    console.warn("[team-view] Required DOM elements not found. Join section:", !!joinSection, "Active section:", !!activeSection);
+    return;
+  }
+  console.log("[team-view] All DOM elements found, setting up event listeners");
 
   let currentTeamId = null;
 
@@ -72,19 +86,25 @@
   };
 
   const loadCurrentTeam = async () => {
+    console.log("[team-view] Loading current team data from /api/team/current");
     setMessage("", "info");
     try {
-      const response = await fetch("/api/team/current");
+      const response = await fetch(getApiUrl("/api/team/current"));
+      console.log("[team-view] API response status:", response.status);
       const data = await response.json();
+      console.log("[team-view] API response data:", data);
       if (!response.ok) {
         throw new Error(data.error || "Unable to load team");
       }
       if (!data.teamId) {
+        console.log("[team-view] No team ID in response, showing join section");
         showJoin();
         return;
       }
+      console.log("[team-view] Team loaded:", data.teamId, "with", data.members?.length || 0, "members");
       showActive(data.teamId, data.members || []);
     } catch (err) {
+      console.error("[team-view] Error loading team:", err);
       showJoin();
       setMessage(err.message || "Unable to load team", "error");
     }
@@ -100,7 +120,7 @@
 
     setMessage("Joining team...", "info");
     try {
-      const response = await fetch("/api/team/join", {
+      const response = await fetch(getApiUrl("/api/team/join"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId })
@@ -128,7 +148,7 @@
 
       setMessage("Creating team...", "info");
       try {
-        const response = await fetch("/api/team/create", {
+        const response = await fetch(getApiUrl("/api/team/create"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ teamName })
@@ -150,7 +170,7 @@
     if (!currentTeamId) return;
     setMessage("Leaving team...", "info");
     try {
-      const response = await fetch("/api/team/leave", { method: "DELETE" });
+      const response = await fetch(getApiUrl("/api/team/leave"), { method: "DELETE" });
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.error || "Unable to leave team");
@@ -177,7 +197,7 @@
 
     setMessage("Adding member...", "info");
     try {
-      const response = await fetch(`/api/teams/${encodeURIComponent(currentTeamId)}/members`, {
+      const response = await fetch(getApiUrl(`/api/teams/${encodeURIComponent(currentTeamId)}/members`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -200,4 +220,5 @@
   });
 
   loadCurrentTeam();
+  console.log("[team-view] Initial loadCurrentTeam() call made");
 })();

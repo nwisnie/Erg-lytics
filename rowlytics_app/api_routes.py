@@ -1,5 +1,6 @@
 """API routes for Rowlytics."""
 
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -25,9 +26,18 @@ from rowlytics_app.services.dynamodb import (
 )
 from rowlytics_app.services.s3 import UPLOAD_BUCKET_NAME, get_s3_client
 
+logger = logging.getLogger(__name__)
+
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 ALLOWED_TEAM_ROLES = {"coach", "rower"}
+
+
+@api_bp.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint - no auth required to test API connectivity."""
+    logger.info("GET /api/health: health check")
+    return jsonify({"status": "ok", "service": "rowlytics-api"}), 200
 
 
 @api_bp.route("/teams/<team_id>/members", methods=["GET"])
@@ -109,23 +119,32 @@ def add_team_member(team_id):
 @api_bp.route("/team/current", methods=["GET"])
 def current_team():
     user_id = session.get("user_id")
+    logger.info(f"GET /team/current: user={user_id}")
+
     if not user_id:
+        logger.warning("GET /team/current: authentication required")
         return jsonify({"error": "authentication required"}), 401
 
     try:
         users_table, team_members_table = get_ddb_tables()
     except RuntimeError as err:
+        logger.error(f"GET /team/current: DynamoDB tables not available: {err}")
         return jsonify({"error": str(err)}), 500
 
     try:
+        logger.debug(f"GET /team/current: fetching membership for user {user_id}")
         membership = get_team_membership(team_members_table, user_id)
     except Exception as err:
+        logger.error(f"GET /team/current: failed to load membership: {err}", exc_info=True)
         return jsonify({"error": "Unable to load team", "detail": str(err)}), 500
 
     if not membership:
+        logger.info(f"GET /team/current: user {user_id} not on a team")
         return jsonify({"teamId": None, "members": []})
 
     team_id = membership.get("teamId")
+    logger.debug(f"GET /team/current: user {user_id} is on team {team_id}")
+
     try:
         members = fetch_team_members(
             users_table,
@@ -133,7 +152,13 @@ def current_team():
             team_id,
             ALLOWED_TEAM_ROLES,
         )
+        logger.info(
+            "GET /team/current: successfully loaded team %s with %d members",
+            team_id,
+            len(members),
+        )
     except Exception as err:
+        logger.error(f"GET /team/current: failed to load team members: {err}", exc_info=True)
         return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
 
     return jsonify({
@@ -515,30 +540,53 @@ def save_recording_metadata():
 
 @api_bp.route("/recordings/<user_id>", methods=["GET"])
 def list_recordings_for_user(user_id):
+    logger.info(f"GET /recordings/{user_id}")
+
     if not user_id:
+        logger.warning("GET /recordings: user_id is required")
         return jsonify({"error": "user_id is required"}), 400
 
     try:
         recordings_table = get_recordings_table()
     except RuntimeError as err:
+        logger.error(f"GET /recordings: recordings table not available: {err}")
         return jsonify({"error": str(err)}), 500
 
     try:
+        logger.debug(f"GET /recordings: querying recordings for user {user_id}")
         items = list_recordings(recordings_table, user_id)
+        logger.info(f"GET /recordings: found {len(items)} recordings for user {user_id}")
     except Exception as err:
+        logger.error(f"GET /recordings: failed to load recordings: {err}", exc_info=True)
         return jsonify({"error": "Unable to load recordings", "detail": str(err)}), 500
+
     try:
+        logger.debug("GET /recordings: creating S3 client for presigned URLs")
         s3 = get_s3_client()
     except RuntimeError as err:
+        logger.error(f"GET /recordings: S3 client not available: {err}")
         return jsonify({"error": str(err)}), 500
 
     for item in items:
         object_key = item.get("objectKey")
         if object_key:
-            item["playbackUrl"] = s3.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": UPLOAD_BUCKET_NAME, "Key": object_key},
-                ExpiresIn=900,
-            )
+            try:
+                logger.debug(f"GET /recordings: generating presigned URL for {object_key}")
+                item["playbackUrl"] = s3.generate_presigned_url(
+                    "get_object",
+                    Params={"Bucket": UPLOAD_BUCKET_NAME, "Key": object_key},
+                    ExpiresIn=900,
+                )
+            except Exception as e:
+                logger.error(
+                    "GET /recordings: failed to generate presigned URL for %s: %s",
+                    object_key,
+                    e,
+                )
+                item["playbackUrl"] = None
+        else:
+            logger.warning("GET /recordings: recording missing objectKey")
+            item["playbackUrl"] = None
 
+    logger.info("GET /recordings: returning %d recordings with playback URLs", len(items))
     return jsonify({"userId": user_id, "recordings": items})
