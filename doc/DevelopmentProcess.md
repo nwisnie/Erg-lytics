@@ -33,6 +33,18 @@ Erglytics/<br>
 - AWS SAM: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-template-basics.html
 
 ## Branching
+Our repository branching architecture will utilize a simple one branch downstream of the main approach. That is, every branch present in our repository will be a direct off-shoot of the main branch. This is in order to reduce the number of merge conflicts by reducing the number of nodes present in our repository. We are also structuring our branching architecture this way in order to reduce feature creep, so we won’t be tempted to make sub-branches to integrate other features that may not be necessary for the initial scope of a feature.
+
+Our branch naming convention is simple: lowercase letters, underscores, and numbers are used to describe the particular feature under development in that branch.
+
+Ex:
+main_feedback_loop
+model_extraction_class
+
+In these branches, only the described features will be worked on. Once finished, the branch will be merged into main after it passes the required CI tests.
+
+The exception to the standard branch flow are personal branches. Each member of the group has a personal branch that will be a space for independent development or experimentation. Members may create sub-branches from their own personal branches as they desire, however no critical project work should be completed in the personal branch and should instead be completed in a conventional branch as highlighted above.
+
 
 ## Code Developement and Review Policy
 Several Rules will be established for merging into the main branch. Firstly We will use Flake8 formating which requires that all files follow a formatting guide specified
