@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask, jsonify, redirect, request, session, url_for
+from flask import Flask, current_app, jsonify, redirect, request, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .api_routes import api_bp
@@ -40,6 +40,12 @@ def create_app() -> Flask:
 
     @app.before_request
     def require_auth():
+        current_app.logger.info(
+            "request path=%s method=%s user=%s",
+            request.path,
+            request.method,
+            session.get("user_id"),
+        )
         if not app.config.get("AUTH_REQUIRED"):
             return None
         if request.path.startswith("/static/") or request.path == "/favicon.ico":
