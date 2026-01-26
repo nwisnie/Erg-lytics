@@ -1,0 +1,1 @@
+"""Team-related data structures."""

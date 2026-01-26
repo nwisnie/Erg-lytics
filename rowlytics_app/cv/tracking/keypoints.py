@@ -1,0 +1,1 @@
+"""Keypoint tracking placeholder."""

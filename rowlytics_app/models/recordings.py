@@ -1,0 +1,1 @@
+"""Recording-related data structures."""

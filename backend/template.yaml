@@ -8,6 +8,11 @@ Parameters:
     Default: rowlytics-auth
     Description: Unique prefix for the Cognito hosted UI domain.
 
+  AppBaseUrl:
+    Type: String
+    Default: https://6raqonzkjb.execute-api.us-east-2.amazonaws.com/Prod
+    Description: Base URL for Cognito redirect and logout URLs.
+
 Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
@@ -137,9 +142,9 @@ Resources:
         - aws.cognito.signin.user.admin
       AllowedOAuthFlowsUserPoolClient: true
       CallbackURLs:
-        - http://localhost:5000/auth/callback
+        - !Sub "${AppBaseUrl}/auth/callback"
       LogoutURLs:
-        - http://localhost:5000/signin
+        - !Sub "${AppBaseUrl}/signin"
       SupportedIdentityProviders:
         - COGNITO
 
@@ -148,6 +153,98 @@ Resources:
     Properties:
       Domain: !Ref CognitoDomainPrefix
       UserPoolId: !Ref UserPool
+
+  RowlyticsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      BinaryMediaTypes:
+        - image/png
+        - image/jpeg
+        - image/jpg
+        - image/gif
+        - image/webp
+        - image/svg+xml
+        - application/octet-stream
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  RowlyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 512
+      Environment:
+        Variables:
+          ROWLYTICS_ENV: production
+          ROWLYTICS_AUTH_REQUIRED: "true"
+          ROWLYTICS_USERS_TABLE: !Ref UsersTable
+          ROWLYTICS_TEAMS_TABLE: !Ref TeamsTable
+          ROWLYTICS_TEAM_MEMBERS_TABLE: !Ref TeamMembersTable
+          ROWLYTICS_TEAM_MEMBERS_USER_INDEX: UserIdIndex
+          ROWLYTICS_TEAMS_NAME_INDEX: TeamNameIndex
+          ROWLYTICS_RECORDINGS_TABLE: !Ref RecordingsTable
+          ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucket
+          ROWLYTICS_COGNITO_DOMAIN: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+          ROWLYTICS_COGNITO_CLIENT_ID: !Ref UserPoolClient
+          ROWLYTICS_COGNITO_REDIRECT_URI: !Sub "${AppBaseUrl}/auth/callback"
+          ROWLYTICS_COGNITO_LOGOUT_REDIRECT_URI: !Sub "${AppBaseUrl}/signin"
+          ROWLYTICS_COGNITO_USER_POOL_ID: !Ref UserPool
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TeamsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TeamMembersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RecordingsTable
+        - S3CrudPolicy:
+            BucketName: !Ref UploadBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:DeleteUser
+                - cognito-idp:AdminDeleteUser
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Root:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RowlyticsApi
+            Path: /
+            Method: ANY
+
+        SignIn:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RowlyticsApi
+            Path: /signin
+            Method: ANY
+        AuthCallback:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RowlyticsApi
+            Path: /auth/callback
+            Method: ANY
+        Logout:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RowlyticsApi
+            Path: /logout
+            Method: ANY
+        ProxyApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RowlyticsApi
+            Path: /{proxy+}
+            Method: ANY
 
 Outputs:
   UsersTableName:
@@ -166,3 +263,5 @@ Outputs:
     Value: !Ref UserPoolClient
   UserPoolDomain:
     Value: !Ref UserPoolDomain
+  RowlyticsApiUrl:
+    Value: !Sub "https://${RowlyticsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

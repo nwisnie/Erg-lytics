@@ -1,10 +1,24 @@
 (() => {
   const grid = document.getElementById("recordingsGrid");
-  if (!grid) return;
+  if (!grid) {
+    console.warn("[recordings] Grid element not found");
+    return;
+  }
+
+  // Helper function to build correct API URLs with stage prefix
+  const getApiUrl = (path) => {
+    const currentPath = window.location.pathname;
+    const match = currentPath.match(/^(\/[^/]+)?/); // Match /Prod or similar stage
+    const stagePath = match ? match[0] : '';
+    return stagePath + path;
+  };
 
   const message = document.getElementById("recordingsMessage");
   const userId = document.body?.dataset?.userId;
+  console.log("[recordings] Page loaded. Grid found:", !!grid, "User ID:", userId);
+
   if (!userId) {
+    console.error("[recordings] No user ID found in data-user-id attribute");
     if (message) {
       message.textContent = "No user ID available to load recordings.";
       message.classList.add("recordings-message--error");
@@ -60,20 +74,28 @@
   };
 
   const loadRecordings = async () => {
+    const apiUrl = getApiUrl(`/api/recordings/${encodeURIComponent(userId)}`);
+    console.log("[recordings] Starting to load recordings from:", apiUrl);
     setMessage("Loading recordings...", "info");
     try {
-      const response = await fetch(`/api/recordings/${encodeURIComponent(userId)}`);
+      console.log("[recordings] Fetching from API...");
+      const response = await fetch(apiUrl);
+      console.log("[recordings] Fetch response status:", response.status);
       const payload = await response.json();
+      console.log("[recordings] API response payload:", payload);
       if (!response.ok) {
         throw new Error(payload.error || "Unable to load recordings");
       }
+      console.log("[recordings] Successfully loaded", payload.recordings?.length || 0, "recordings");
       renderRecordings(payload.recordings || []);
       setMessage("", "success");
     } catch (err) {
+      console.error("[recordings] Error loading recordings:", err);
       renderEmpty();
       setMessage(err.message || "Unable to load recordings", "error");
     }
   };
 
+  console.log("[recordings] Calling loadRecordings()");
   loadRecordings();
 })();
