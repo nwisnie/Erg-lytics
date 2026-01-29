@@ -51,7 +51,7 @@
         <div class="capture__branding">
             <img
                 class="logo-mark__image"
-                src="{{ url_for('static', filename='images/erg_cool.png') }}"
+                src="{{ 'images/erg_cool.png' | cloudfront_url }}"
                 alt="Erglytics logo"
             />
 
@@ -73,7 +73,7 @@
             <p class="capture__placeholder-text">Position your body like the below image</p>
             <img
               class="capture__placeholder-image"
-              src="{{ url_for('static', filename='images/erg_cool.png') }}"
+              src="{{ 'images/erg_cool.png' | cloudfront_url }}"
               alt="Rowing posture guide"
             />
             <p class="capture__placeholder-text">Keep full body in frame when working out</p>
@@ -83,7 +83,7 @@
             class="capture__image"
             playsinline
             muted
-            poster="{{ url_for('static', filename='images/erg_cool.png') }}"
+            poster="{{ 'images/erg_cool.png' | cloudfront_url }}"
           ></video>
           <canvas id="poseOverlay" class="capture__overlay"></canvas>
         </div>
@@ -94,15 +94,6 @@
         <button class="btn btn--dark">Cancel</button>
       </div>
     </main>
-
-    <script>
-      document.addEventListener("DOMContentLoaded", () => {
-        fetch("/api/increment/capture-workout", {
-          method: "POST"
-        })
-        .catch(err => console.error("Failed to increment:", err));
-      });
-    </script>
 
     <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
 

@@ -1,0 +1,1 @@
+"""CV model registry placeholder."""
