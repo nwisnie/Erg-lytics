@@ -50,7 +50,7 @@
         <div class="capture__branding">
           <img
             class="logo-mark__image"
-            src="{{ url_for('static', filename='images/erg_cool.png') }}"
+            src="{{ 'images/erg_cool.png' | cloudfront_url }}"
             alt="Erglytics logo"
           />
           <span class="logo-mark__text">Erglytics</span>

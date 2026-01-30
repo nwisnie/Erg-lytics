@@ -2,21 +2,9 @@
 
 from __future__ import annotations
 
-import base64
-import json
-import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Iterable
 from urllib import parse
-from urllib import request as urlrequest
-
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
-    boto3 = None
-    ClientError = None
 
 from flask import (
     Blueprint,
@@ -29,6 +17,14 @@ from flask import (
     url_for,
 )
 
+from rowlytics_app.auth.cognito import (
+    build_cognito_login_url,
+    decode_token_payload,
+    exchange_code_for_tokens,
+)
+from rowlytics_app.auth.sessions import user_context
+from rowlytics_app.services.dynamodb import sync_user_profile
+
 public_bp = Blueprint("public", __name__)
 
 
@@ -40,8 +36,6 @@ class TemplateCard:
     image_path: str
     template_name: str
 
-
-USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
 
 TEMPLATE_CARDS: tuple[TemplateCard, ...] = (
     TemplateCard(
@@ -79,115 +73,13 @@ def _iter_cards() -> Iterable[TemplateCard]:
     return iter(TEMPLATE_CARDS)
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _get_users_table():
-    if boto3 is None:
-        return None
-    dynamodb = boto3.resource("dynamodb")
-    return dynamodb.Table(USERS_TABLE_NAME)
-
-
-def _sync_user_profile(user_id: str | None, email: str | None, name: str | None) -> str | None:
-    if not user_id:
-        return name
-    table = _get_users_table()
-    if table is None:
-        return name
-
-    safe_name = name or (email.split("@")[0] if email else "New Rower")
-    now = _now_iso()
-
-    update_expr = (
-        "SET #name = if_not_exists(#name, :name), "
-        "createdAt = if_not_exists(createdAt, :createdAt)"
-    )
-    expr_attr_names = {"#name": "name"}
-    expr_attr_values = {":name": safe_name, ":createdAt": now}
-
-    if email:
-        update_expr += ", email = if_not_exists(email, :email)"
-        expr_attr_values[":email"] = email
-
-    try:
-        response = table.update_item(
-            Key={"userId": user_id},
-            UpdateExpression=update_expr,
-            ExpressionAttributeNames=expr_attr_names,
-            ExpressionAttributeValues=expr_attr_values,
-            ReturnValues="ALL_NEW",
-        )
-    except Exception:
-        return name
-
-    attributes = response.get("Attributes") or {}
-    return attributes.get("name") or name
-
-
 def _get_card(slug: str) -> TemplateCard | None:
     return next((card for card in TEMPLATE_CARDS if card.slug == slug), None)
 
 
-def _user_context() -> dict[str, str | None]:
-    return {
-        "user_id": session.get("user_id"),
-        "user_email": session.get("user_email"),
-        "user_name": session.get("user_name"),
-    }
-
-
-def _decode_token_payload(token: str) -> dict:
-    try:
-        payload_segment = token.split(".")[1]
-        padding = "=" * (-len(payload_segment) % 4)
-        payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
-        return json.loads(payload_bytes.decode("utf-8"))
-    except Exception:
-        return {}
-
-
-def _build_cognito_login_url() -> str | None:
-    domain = current_app.config.get("COGNITO_DOMAIN")
-    client_id = current_app.config.get("COGNITO_CLIENT_ID")
-    redirect_uri = current_app.config.get("COGNITO_REDIRECT_URI")
-    if not domain or not client_id or not redirect_uri:
-        return None
-    query = parse.urlencode({
-        "client_id": client_id,
-        "response_type": "code",
-        "scope": "openid email profile aws.cognito.signin.user.admin",
-        "redirect_uri": redirect_uri,
-    })
-    return f"https://{domain}/oauth2/authorize?{query}"
-
-
-def _exchange_code_for_tokens(code: str) -> dict:
-    domain = current_app.config.get("COGNITO_DOMAIN")
-    client_id = current_app.config.get("COGNITO_CLIENT_ID")
-    redirect_uri = current_app.config.get("COGNITO_REDIRECT_URI")
-    if not domain or not client_id or not redirect_uri:
-        raise RuntimeError("Cognito configuration is missing")
-    token_url = f"https://{domain}/oauth2/token"
-    data = parse.urlencode({
-        "grant_type": "authorization_code",
-        "client_id": client_id,
-        "code": code,
-        "redirect_uri": redirect_uri,
-    }).encode("utf-8")
-    req = urlrequest.Request(
-        token_url,
-        data=data,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    with urlrequest.urlopen(req) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
 @public_bp.route("/")
 def landing_page() -> str:
-    return render_template("index.html", **_user_context())
+    return render_template("index.html", **user_context())
 
 
 @public_bp.route("/templates/<slug>")
@@ -195,24 +87,24 @@ def template_detail(slug: str) -> str:
     card = _get_card(slug)
     if card is None:
         abort(404)
-    return render_template(card.template_name, card=card, **_user_context())
+    return render_template(card.template_name, card=card, **user_context())
 
 
 @public_bp.route("/profile")
 def profile() -> str:
-    return render_template("profile.html", **_user_context())
+    return render_template("profile.html", **user_context())
 
 
 @public_bp.route("/account-settings")
 def account_settings() -> str:
-    return render_template("account_settings.html", **_user_context())
+    return render_template("account_settings.html", **user_context())
 
 
 @public_bp.route("/signin")
 def signin() -> str:
     if session.get("user_id"):
         return redirect(url_for("public.landing_page"))
-    login_url = _build_cognito_login_url()
+    login_url = build_cognito_login_url()
     return render_template("sign_in.html", login_url=login_url)
 
 
@@ -221,14 +113,14 @@ def auth_callback() -> str:
     code = request.args.get("code")
     if not code:
         return render_template("sign_in.html",
-                               login_url=_build_cognito_login_url(),
+                               login_url=build_cognito_login_url(),
                                error="Missing auth code."), 400
     try:
-        tokens = _exchange_code_for_tokens(code)
+        tokens = exchange_code_for_tokens(code)
     except Exception as err:
         return render_template(
             "sign_in.html",
-            login_url=_build_cognito_login_url(),
+            login_url=build_cognito_login_url(),
             error=f"Auth failed: {err}",
         ), 400
 
@@ -236,18 +128,18 @@ def auth_callback() -> str:
     if not id_token:
         return render_template(
             "sign_in.html",
-            login_url=_build_cognito_login_url(),
+            login_url=build_cognito_login_url(),
             error="Missing ID token from Cognito.",
         ), 400
 
-    payload = _decode_token_payload(id_token)
+    payload = decode_token_payload(id_token)
     session["id_token"] = id_token
     session["access_token"] = tokens.get("access_token")
     session["user_id"] = payload.get("sub")
     session["user_email"] = payload.get("email")
     session["user_name"] = payload.get("name") or payload.get("cognito:username")
 
-    stored_name = _sync_user_profile(
+    stored_name = sync_user_profile(
         session.get("user_id"),
         session.get("user_email"),
         session.get("user_name"),
@@ -271,3 +163,9 @@ def logout() -> str:
         "logout_uri": logout_uri,
     })
     return redirect(f"https://{domain}/logout?{query}")
+
+
+@public_bp.route("/favicon.ico")
+def favicon_redirect():
+    """Redirect /favicon.ico to /static/favicon.ico to handle browser requests."""
+    return redirect(url_for("static", filename="favicon.ico"), code=301)

@@ -1,22 +1,44 @@
-"""Entry point for the Rowlytics Flask application"""
+"""Entry point for the Rowlytics Flask application."""
 
 from __future__ import annotations
 
-from dotenv import load_dotenv
-load_dotenv()
-
-import os
+import awsgi
 
 from rowlytics_app import create_app
 
 app = create_app()
 
 
-def _str_to_bool(value: str | None) -> bool:
-    return value is not None and value.lower() in {"1", "true", "yes", "on"}
+def _inject_stage_prefix(event):
+    request_context = event.get("requestContext") or {}
+    stage = request_context.get("stage")
+    if not stage:
+        return event
+
+    headers = event.get("headers") or {}
+    header_keys = {key.lower() for key in headers}
+    if "x-forwarded-prefix" not in header_keys:
+        headers["X-Forwarded-Prefix"] = f"/{stage}"
+    event["headers"] = headers
+    return event
 
 
-if __name__ == "__main__":
-    debug = _str_to_bool(os.getenv("FLASK_DEBUG", "0"))
-    port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=debug)
+def lambda_handler(event, context):
+    event = _inject_stage_prefix(event)
+    return awsgi.response(
+        app,
+        event,
+        context,
+        base64_content_types={
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "image/gif",
+            "image/webp",
+            "image/svg+xml",
+            "image/vnd.microsoft.icon",
+            "image/x-icon",
+            "application/octet-stream",
+            "video/webm",
+        },
+    )

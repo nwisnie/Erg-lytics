@@ -52,7 +52,7 @@
 <header class="masthead">
         <img
           class="logo-mark__image"
-          src="{{ url_for('static', filename='images/erg_cool.png') }}"
+          src="{{ 'images/erg_cool.png' | cloudfront_url }}"
           alt="Erglytics mark"
         />
         <span class="logo-mark__text">Erglytics</span>
@@ -61,7 +61,7 @@
     <main class="quadrants">
       <section class="quadrant">
         <img
-          src="{{ url_for('static', filename='images/camera_cool.png') }}"
+          src="{{ 'images/camera_cool.png' | cloudfront_url }}"
           alt="Capture Workout"
           loading="lazy"
         />
@@ -79,7 +79,7 @@
 
       <section class="quadrant">
         <img
-          src="{{ url_for('static', filename='images/snapshot_cool.png') }}"
+          src="{{ 'images/snapshot_cool.png' | cloudfront_url }}"
           alt="Snapshot Library"
           loading="lazy"
         />
@@ -97,7 +97,7 @@
 
       <section class="quadrant">
         <img
-          src="{{ url_for('static', filename='images/folder_cool.png') }}"
+          src="{{ 'images/folder_cool.png' | cloudfront_url }}"
           alt="Workout Summaries"
           loading="lazy"
         />
@@ -115,7 +115,7 @@
 
       <section class="quadrant">
         <img
-          src="{{ url_for('static', filename='images/team_cool.png') }}"
+          src="{{ 'images/team_cool.png' | cloudfront_url }}"
           alt="Team View"
           loading="lazy"
         />
@@ -131,10 +131,6 @@
         </div>
       </section>
     </main>
-
-    <div style="text-align:center; margin: 40px 0; font-size: 1rem; color: #666;">
-      <span id="cw-views">...</span> workouts analyzed
-    </div>
 
     <script>
       fetch("/api/count/capture-workout")
