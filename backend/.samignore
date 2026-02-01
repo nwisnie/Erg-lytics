@@ -1,0 +1,21 @@
+# Infra / tooling
+aws/
+.github/
+doc/
+scripts/
+tests/
+
+# Python junk
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# SAM artifacts
+.aws-sam/
+
+# Secrets / local files
+.env
+
+# OS
+.DS_Store
