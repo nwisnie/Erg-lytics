@@ -7,7 +7,7 @@ s3_prefix = "erglytics-dev"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
-parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth\" AppBaseUrl=\"https://6raqonzkjb.execute-api.us-east-2.amazonaws.com/Prod\""
+parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth\" AppBaseUrl=\"https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod\""
 
 [default.global.parameters]
 region = "us-east-2"
