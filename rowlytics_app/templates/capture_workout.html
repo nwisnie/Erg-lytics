@@ -9,7 +9,7 @@
       href="{{ url_for('static', filename='css/styles.css') }}"
     />
   </head>
-  <body class="capture" data-user-id="{{ user_id }}">
+  <body class="capture" data-user-id="{{ user_id }}" data-api-base="{{ request.url_root.rstrip('/') }}">
 
   <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
     <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

@@ -1,7 +1,7 @@
 import {
   FilesetResolver,
   PoseLandmarker
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304";
 
 const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
@@ -10,7 +10,8 @@ const overlay = document.getElementById("poseOverlay");
 const overlayCtx = overlay ? overlay.getContext("2d") : null;
 const viewport = document.querySelector(".capture__viewport");
 const placeholder = document.getElementById("capturePlaceholder");
-const MP_BASE = "/static/mediapipe";
+const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+const MP_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/mediapipe";
 const MP_WASM_PATH = `${MP_BASE}/wasm`;
 const MP_MODEL_PATH = `${MP_BASE}/pose_landmarker_lite.task`;
 
@@ -206,7 +207,7 @@ function getRecorderOptions() {
 }
 
 async function requestUploadUrl(contentType) {
-  const response = await fetch("/api/recordings/presign", {
+  const response = await fetch(`${apiBase}/api/recordings/presign`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json"
@@ -226,7 +227,7 @@ async function requestUploadUrl(contentType) {
 
 async function saveRecordingMetadata(metadata) {
   try {
-    const response = await fetch("/api/recordings", {
+    const response = await fetch(`${apiBase}/api/recordings`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
