@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock
 
-import app as lambda_app
 import pytest
+
+# Provide stub awsgi if dependency is absent so importing app.py succeeds in CI.
+if "awsgi" not in sys.modules:
+    sys.modules["awsgi"] = MagicMock()
+
+import app as lambda_app
 
 
 def test_inject_stage_prefix_no_stage_returns_event_unchanged() -> None:
