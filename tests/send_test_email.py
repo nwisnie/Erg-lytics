@@ -1,11 +1,12 @@
-import sys
 import os
+import sys
+
 from dotenv import load_dotenv
+
+from rowlytics_app.services.ses_email import send_email
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 load_dotenv()
-
-from rowlytics_app.services.ses_email import send_email
 
 
 def main():
@@ -20,6 +21,7 @@ def main():
         "most capable Software Engineer to exist on this planet.",
     )
     print("Sent! MessageId:", msg_id)
+
 
 if __name__ == "__main__":
     main()

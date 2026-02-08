@@ -12,7 +12,7 @@ Parameters:
     Type: String
     Default: https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod
     Description: Base URL for Cognito redirect and logout URLs.
-  
+
   SesFromEmail:
     Type: String
     Description: Verified SES sender email (our team email). Must be verified in SES for this region/account.
