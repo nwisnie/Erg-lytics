@@ -2,9 +2,8 @@ name: Bug Report
 description: Defect Tracker
 title: "[Bug]: "
 labels: ["bug", "triage"]
-projects: ["nwisne/1"]
+projects: ["nwisnie/1"]
 
-type: bug
 body:
   - type: markdown
     attributes:
