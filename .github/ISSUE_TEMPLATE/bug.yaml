@@ -1,0 +1,49 @@
+name: Bug Report
+description: Defect Tracker
+title: "[Bug]: "
+labels: ["bug", "triage"]
+projects: ["nwisne/1"]
+
+type: bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: input
+    id: defect
+    attributes:
+      label: Defect description
+      description: Name the defect in a few words.
+    validations:
+      required: false
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the steps to reproduce the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: expected vs actual behavior
+      description: Describe what you expected to happen instead.
+    validations:
+      required: true
+  - type: input
+    id: testcase-id
+    attributes:
+      label: Test case ID
+      description: If this bug is related to a specific test case, please provide the ID here.
+  - type: dropdown
+    id: Severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - high
+        - medium
+        - low
+    validations:
+      required: true
