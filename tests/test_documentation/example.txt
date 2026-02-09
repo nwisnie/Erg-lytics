@@ -1,0 +1,7 @@
+Name of tester:
+Date:
+Outcome: (Pass/Fail)
+Expected Results: (Only if tests fails, do not include otherwise)
+Actual Results/Evidence: (Logs or screenshots from test)
+Test Steps: (Include as many specifics as possible, including path where tests was launched and steps used to launch test)
+Next Steps:

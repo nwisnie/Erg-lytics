@@ -1,0 +1,14 @@
+Name of tester: Aidan Mahaffey
+Date: 2/8/26
+Outcome: Pass
+Actual Results/Evidence: Body tracker in the capture workout feature of the erglytics website was able
+to track my body movements using keypoint nodes in real time utilizing my laptop camera.
+
+Test Steps: Opened Erglytics website using: https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod/
+Proceded to make an account and navigate to the homepage. Navigated to the "Capture Workout" page.
+Pressed the "Start" button. Allowed webite to access my device's camera. Moved my body back and forth
+to test the accuracy and latency of the body tracker. Pressed the "Stop" button. Pressed the "Back"
+button.
+
+Next Steps: Seeing as the website is capable of hosting a cv tracking program, we should move onto
+improving the current implementation of the model.
