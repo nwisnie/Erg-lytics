@@ -1,0 +1,15 @@
+| Test Case ID | Level (Unit / Integration / System) | Requirement ID | Tool           | Automated? | CI Integrated? | Evidence Link                                  | Frequency        |
+|-------------|------------------------------------|----------------|----------------|------------|---------------|------------------------------------------------|------------------|
+| TC-1        | System                             | FR-1           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-2        | System                             | FR-2           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-3        | Unit                               | FR-3           | pytest         | Yes        | Yes           | /tests/test_dynamodb.py                        | Once per build   |
+| TC-4        | Unit                               | FR-4           | pytest         | Yes        | Yes           | /tests/test_auth.py                            | Once per build   |
+| TC-5        | Unit                               | FR-5           | pytest         | Yes        | Yes           | /tests/send_test_email.py                     | Once per build   |
+| TC-6        | Unit                               | FR-6           | pytest         | Yes        | Yes           | /tests/test_app.py, /tests/test_lambda.py      | Once per build   |
+| TC-7        | System                             | FR-7           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-8        | Unit                               | FR-8           | pytest         | Yes        | Yes           | /tests/test_dynamodb.py                        | Once per build   |
+| TC-9        | Integration                        | FR-9           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-10       | System                             | NF-1           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-11       | Unit                               | NF-2           | pytest         | Yes        | Yes           | /tests/test_auth.py                            | Once per build   |
+| TC-12       | System                             | NF-3           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
+| TC-13       | System                             | NF-4           | N/A (Manual)   | No         | No            | /tests/test_documentation                      | At least once    |
