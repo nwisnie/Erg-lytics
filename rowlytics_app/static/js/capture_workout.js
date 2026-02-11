@@ -21,6 +21,7 @@ const userId = document.body?.dataset?.userId || "demo-user";
 const recordingDurationMs = 5000;
 const inFrameThresholdMs = 5000;
 const recordingCooldownMs = 3000;
+const workoutSummaryText = "Workout session";
 
 let stream = null;
 let poseLandmarker = null;
@@ -40,6 +41,7 @@ let lastInFrame = false;
 let overlayWidth = 0;
 let overlayHeight = 0;
 let overlayDpr = 1;
+let workoutStartAt = null;
 
 // for final thing maybe we
 // only require like left should hip and knee
@@ -332,6 +334,34 @@ async function recordClip() {
   }, recordingDurationMs);
 }
 
+async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
+  if (!apiBase) {
+    console.warn("Workout not saved: missing apiBase");
+    return;
+  }
+  try {
+    const response = await fetch(`${apiBase}/api/workouts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        durationSec,
+        startedAt,
+        completedAt,
+        summary: workoutSummaryText,
+        workoutScore: null
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to save workout");
+    }
+    poseStatus.textContent = "Workout saved";
+  } catch (err) {
+    console.warn("Workout not saved:", err);
+    poseStatus.textContent = "Workout ended (not saved)";
+  }
+}
+
 async function startCamera() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -362,6 +392,7 @@ async function startCamera() {
   running = isPoseReady;
   lastVideoTime = -1;
   resetRecordingTimers();
+  workoutStartAt = new Date().toISOString();
 
   toggleBtn.textContent = "Stop";
   toggleBtn.classList.remove("btn--subtle");
@@ -390,6 +421,14 @@ function stopCamera() {
   hidePoseStatus();
   lastVideoTime = -1;
   resetRecordingTimers();
+
+  if (workoutStartAt) {
+    const completedAt = new Date().toISOString();
+    const durationMs = Date.parse(completedAt) - Date.parse(workoutStartAt);
+    const durationSec = Math.max(1, Math.round(durationMs / 1000));
+    saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
+  }
+  workoutStartAt = null;
 
   toggleBtn.textContent = "Start";
   toggleBtn.classList.remove("btn--danger");

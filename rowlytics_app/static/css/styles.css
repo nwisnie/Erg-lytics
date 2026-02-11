@@ -711,6 +711,44 @@ body {
   color: #cbd5f5;
 }
 
+.workout-card__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.workout-card__title {
+  margin: 0;
+  font-size: 1rem;
+  color: #e2e8f0;
+}
+
+.workout-card__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(134, 239, 172, 0.2);
+  color: #86efac;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.workout-card__summary {
+  margin: 0.65rem 0 0.35rem;
+  color: #cbd5f5;
+  font-weight: 600;
+}
+
+.workout-card__meta {
+  margin: 0;
+  color: #a5b4fc;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .recordings-message {
   min-height: 1.2rem;
   font-size: 0.9rem;
@@ -814,6 +852,23 @@ body {
 .snapshot .recordings-message,
 .snapshot .recordings-empty {
   color: #1e293b;
+}
+
+.snapshot .workout-card__title {
+  color: #0f172a;
+}
+
+.snapshot .workout-card__summary {
+  color: #1f2937;
+}
+
+.snapshot .workout-card__meta {
+  color: #334155;
+}
+
+.snapshot .workout-card__pill {
+  background: rgba(34, 197, 94, 0.12);
+  color: #166534;
 }
 
 .profile-card {

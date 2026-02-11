@@ -19,8 +19,10 @@ from rowlytics_app.services.dynamodb import (
     get_team,
     get_team_membership,
     get_teams_table,
+    get_workouts_table,
     list_recordings,
     list_team_memberships,
+    list_workouts,
     now_iso,
     team_name_exists,
 )
@@ -590,3 +592,90 @@ def list_recordings_for_user(user_id):
 
     logger.info("GET /recordings: returning %d recordings with playback URLs", len(items))
     return jsonify({"userId": user_id, "recordings": items})
+
+
+@api_bp.route("/workouts", methods=["POST"])
+def save_workout():
+    user_id = session.get("user_id")
+    logger.info(f"POST /workouts: user={user_id}")
+
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    duration_sec = data.get("durationSec")
+    workout_score = data.get("workoutScore")
+    summary = (data.get("summary") or "").strip()
+    started_at = data.get("startedAt")
+    completed_at = data.get("completedAt") or now_iso()
+
+    try:
+        duration_value = float(duration_sec)
+    except (TypeError, ValueError):
+        duration_value = None
+
+    if duration_value is None or duration_value <= 0:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
+
+    duration_value = int(round(duration_value))
+
+    try:
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        logger.warning("POST /workouts: workouts table not configured: %s", err)
+        return jsonify({"status": "skipped", "reason": str(err)}), 200
+
+    workout_id = uuid4().hex
+    item = {
+        "userId": user_id,
+        "workoutId": workout_id,
+        "durationSec": duration_value,
+        "completedAt": completed_at,
+    }
+
+    if started_at:
+        item["startedAt"] = started_at
+
+    if workout_score is not None:
+        try:
+            item["workoutScore"] = float(workout_score)
+        except (TypeError, ValueError):
+            return jsonify({"error": "workoutScore must be numeric"}), 400
+
+    if summary:
+        item["summary"] = summary
+
+    try:
+        workouts_table.put_item(Item=item)
+    except Exception as err:
+        logger.error("POST /workouts: failed to save workout: %s", err, exc_info=True)
+        return jsonify({"error": "Unable to save workout", "detail": str(err)}), 500
+
+    return jsonify({"status": "ok", "workoutId": workout_id}), 201
+
+
+@api_bp.route("/workouts", methods=["GET"])
+def list_workouts_for_current_user():
+    user_id = session.get("user_id")
+    logger.info(f"GET /workouts: user={user_id}")
+
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        logger.warning("GET /workouts: workouts table not configured: %s", err)
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        items = list_workouts(workouts_table, user_id)
+    except Exception as err:
+        logger.error("GET /workouts: failed to load workouts: %s", err, exc_info=True)
+        return jsonify({"error": "Unable to load workouts", "detail": str(err)}), 500
+
+    def sort_key(item):
+        return item.get("completedAt") or item.get("createdAt") or ""
+
+    items_sorted = sorted(items, key=sort_key, reverse=True)
+    return jsonify({"userId": user_id, "workouts": items_sorted})

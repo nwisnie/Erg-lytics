@@ -6,7 +6,7 @@
     <title>{{ card.title }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
   </head>
-  <body class="detail" data-user-id="{{ user_id }}">
+  <body class="capture snapshot" data-user-id="{{ user_id }}" data-api-base="{{ request.url_root.rstrip('/') }}">
 
   <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
     <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -43,18 +43,39 @@
     </div>
   </div>
 
-<main class="detail__wrapper">
+  <header class="capture__header">
+      <div class="capture__header-inner">
+        <div class="capture__branding">
+            <img
+                class="logo-mark__image"
+                src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+                alt="Erglytics logo"
+            />
+
+          <span class="logo-mark__text">Erglytics</span>
+        </div>
+
+        <a class="capture__back" href="{{ url_for('public.landing_page') }}">
+          Back
+        </a>
+      </div>
+    </header>
+
+    <main class="detail__wrapper">
       <a class="detail__back" href="{{ url_for('public.landing_page') }}">Back</a>
-      <section class="detail__card">
-        <img src="{{ url_for('static', filename=card.image_path) }}" alt="{{ card.title }}" />
+      <section class="recordings-panel">
         <div>
           <h1>{{ card.title }}</h1>
           <p>{{ card.blurb }}</p>
           <br>
-          <p>
-            View summaries and analytics from previous workouts.
-          </p>
+          <p>Review your most recent workouts. Newest appear first.</p>
         </div>
+        <div class="recordings-panel__header">
+          <h2>Past Workouts</h2>
+          <p>Each entry includes duration, timestamp, summary, and score when available.</p>
+        </div>
+        <div id="workoutsGrid" class="recordings-grid"></div>
+        <p id="workoutsMessage" class="recordings-message" aria-live="polite"></p>
       </section>
     </main>
 
