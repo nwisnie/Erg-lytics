@@ -8,3 +8,12 @@ Test documents should be named like:
 Ex:
 aidan_2_8_26_template_documentation
 (Aidan’s report from February 8, 2026)
+
+
+---
+
+## Bug Reports and RCA Tracking
+
+| Issue # | Issue Title | Type | Severity | Link |
+|--------|-------------|------|----------|------|
+| 67 | Mobile UI is buggy | Bug Report + RCA | Low | https://github.com/nwisnie/Erg-lytics/issues/67 |
