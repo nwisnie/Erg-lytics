@@ -24,6 +24,7 @@ TEAM_MEMBERS_TABLE_NAME = os.getenv("ROWLYTICS_TEAM_MEMBERS_TABLE", "RowlyticsTe
 TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserIdIndex")
 TEAM_NAME_INDEX = os.getenv("ROWLYTICS_TEAMS_NAME_INDEX", "TeamNameIndex")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
+WORKOUTS_TABLE_NAME = os.getenv("ROWLYTICS_WORKOUTS_TABLE", "RowlyticsWorkouts")
 
 
 def now_iso() -> str:
@@ -58,6 +59,14 @@ def get_recordings_table():
         raise RuntimeError("ROWLYTICS_RECORDINGS_TABLE is not configured")
     logger.debug(f"Accessing recordings table: {RECORDINGS_TABLE_NAME}")
     return _get_resource().Table(RECORDINGS_TABLE_NAME)
+
+
+def get_workouts_table():
+    if not WORKOUTS_TABLE_NAME:
+        logger.error("ROWLYTICS_WORKOUTS_TABLE environment variable is not configured")
+        raise RuntimeError("ROWLYTICS_WORKOUTS_TABLE is not configured")
+    logger.debug(f"Accessing workouts table: {WORKOUTS_TABLE_NAME}")
+    return _get_resource().Table(WORKOUTS_TABLE_NAME)
 
 
 def get_ddb_tables():
@@ -328,6 +337,13 @@ def list_owned_teams(teams_table, user_id: str):
 def list_recordings(recordings_table, user_id: str):
     return query_all(
         recordings_table,
+        KeyConditionExpression=Key("userId").eq(user_id),
+    )
+
+
+def list_workouts(workouts_table, user_id: str):
+    return query_all(
+        workouts_table,
         KeyConditionExpression=Key("userId").eq(user_id),
     )
 
