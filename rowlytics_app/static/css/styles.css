@@ -434,6 +434,24 @@ body {
   box-shadow: none;
 }
 
+.capture__switch--hidden {
+  display: none;
+}
+
+.btn--start {
+  background: #22c55e;
+  color: #052e16;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn--start:hover {
+  background: #16a34a;
+  color: #ecfdf5;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn--subtle {
   background: #e5e7eb;
   color: #6b7280;
