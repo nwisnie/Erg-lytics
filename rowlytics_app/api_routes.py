@@ -608,6 +608,7 @@ def save_workout():
     summary = (data.get("summary") or "").strip()
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
+    created_at = data.get("createdAt") or completed_at
 
     try:
         duration_value = float(duration_sec)
@@ -630,6 +631,7 @@ def save_workout():
         "userId": user_id,
         "workoutId": workout_id,
         "durationSec": duration_value,
+        "createdAt": created_at,
         "completedAt": completed_at,
     }
 
