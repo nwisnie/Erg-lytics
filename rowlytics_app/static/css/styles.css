@@ -380,6 +380,12 @@ body {
   opacity: 1;
 }
 
+.capture__viewport--unmirror .capture__image,
+.capture__viewport--unmirror .capture__overlay {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
 .capture__placeholder {
   position: absolute;
   inset: 0;
@@ -431,6 +437,24 @@ body {
   border-radius: 6px;
   padding: 0.6rem 2.4rem;
   font-size: 0.9rem;
+  box-shadow: none;
+}
+
+.capture__switch--hidden {
+  display: none;
+}
+
+.btn--start {
+  background: #22c55e;
+  color: #052e16;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn--start:hover {
+  background: #16a34a;
+  color: #ecfdf5;
+  transform: none;
   box-shadow: none;
 }
 
