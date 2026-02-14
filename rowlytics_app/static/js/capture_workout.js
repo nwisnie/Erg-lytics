@@ -93,6 +93,12 @@ function setupCameraSwitchControl() {
   switchCameraBtn.classList.add("capture__switch--hidden");
 }
 
+function applyViewportMirrorState() {
+  if (!viewport) return;
+  // Front camera previews are mirrored by many browsers; force an unmirrored view.
+  viewport.classList.toggle("capture__viewport--unmirror", preferredFacingMode === "user");
+}
+
 async function getCameraStream() {
   const attempts = [
     { video: { facingMode: { exact: preferredFacingMode } }, audio: false },
@@ -445,15 +451,17 @@ async function startCamera() {
   poseStatus.classList.remove("ready");
   clearOverlay();
 
+  // Update CTA immediately once camera preview is live.
+  toggleBtn.textContent = "Stop";
+  toggleBtn.classList.remove("btn--start");
+  toggleBtn.classList.add("btn--danger");
+  applyViewportMirrorState();
+
   const isPoseReady = await ensurePoseReady();
   running = isPoseReady;
   lastVideoTime = -1;
   resetRecordingTimers();
   workoutStartAt = new Date().toISOString();
-
-  toggleBtn.textContent = "Stop";
-  toggleBtn.classList.remove("btn--start");
-  toggleBtn.classList.add("btn--danger");
 
   if (running) {
     requestAnimationFrame(loop);
@@ -478,6 +486,9 @@ function stopCamera() {
   hidePoseStatus();
   lastVideoTime = -1;
   resetRecordingTimers();
+  if (viewport) {
+    viewport.classList.remove("capture__viewport--unmirror");
+  }
 
   if (workoutStartAt) {
     const completedAt = new Date().toISOString();
@@ -503,6 +514,7 @@ async function switchCamera() {
   const currentStream = stream;
   preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
   updateSwitchCameraButton();
+  applyViewportMirrorState();
   cameraSwitchInProgress = true;
 
   try {
@@ -519,6 +531,7 @@ async function switchCamera() {
   } catch (err) {
     preferredFacingMode = previousFacingMode;
     updateSwitchCameraButton();
+    applyViewportMirrorState();
     console.error("Camera switch failed:", err);
     poseStatus.textContent = "Unable to switch camera";
   } finally {
@@ -594,6 +607,7 @@ if (switchCameraBtn) {
     if (!stream) {
       preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
       updateSwitchCameraButton();
+      applyViewportMirrorState();
       return;
     }
     await switchCamera();
@@ -601,3 +615,4 @@ if (switchCameraBtn) {
 }
 
 setupCameraSwitchControl();
+applyViewportMirrorState();

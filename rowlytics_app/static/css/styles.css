@@ -380,6 +380,12 @@ body {
   opacity: 1;
 }
 
+.capture__viewport--unmirror .capture__image,
+.capture__viewport--unmirror .capture__overlay {
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
 .capture__placeholder {
   position: absolute;
   inset: 0;
