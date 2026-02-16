@@ -95,11 +95,22 @@ Resources:
           AttributeType: S
         - AttributeName: recordingId
           AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: recordingId
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserCreatedAtIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   WorkoutsTable:
     Type: AWS::DynamoDB::Table
@@ -111,11 +122,22 @@ Resources:
           AttributeType: S
         - AttributeName: workoutId
           AttributeType: S
+        - AttributeName: completedAt
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: workoutId
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserCompletedAtIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: completedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   UploadBucket:
     Type: AWS::S3::Bucket
@@ -209,7 +231,13 @@ Resources:
           ROWLYTICS_TEAM_MEMBERS_USER_INDEX: UserIdIndex
           ROWLYTICS_TEAMS_NAME_INDEX: TeamNameIndex
           ROWLYTICS_RECORDINGS_TABLE: !Ref RecordingsTable
+          ROWLYTICS_RECORDINGS_CREATED_AT_INDEX: UserCreatedAtIndex
           ROWLYTICS_WORKOUTS_TABLE: !Ref WorkoutsTable
+          ROWLYTICS_WORKOUTS_COMPLETED_AT_INDEX: UserCompletedAtIndex
+          ROWLYTICS_MAX_PAGE_SIZE: "50"
+          ROWLYTICS_TEAM_MEMBERS_PAGE_SIZE: "20"
+          ROWLYTICS_RECORDINGS_PAGE_SIZE: "8"
+          ROWLYTICS_WORKOUTS_PAGE_SIZE: "8"
           ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucket
           ROWLYTICS_COGNITO_DOMAIN: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
           ROWLYTICS_COGNITO_CLIENT_ID: !Ref UserPoolClient

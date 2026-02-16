@@ -27,6 +27,13 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         <p>Auto-captured clips appear here after uploads finish.</p>
       </div>
       <div id="recordingsGrid" class="recordings-grid"></div>
+      <button
+        id="recordingsLoadMore"
+        class="btn btn--subtle recordings-load-more recordings-load-more--hidden"
+        type="button"
+      >
+        Load more clips
+      </button>
       <p id="recordingsMessage" class="recordings-message" aria-live="polite"></p>
     </section>
   </div>

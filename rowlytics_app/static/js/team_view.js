@@ -1,11 +1,10 @@
 (() => {
-  console.log("[team-view] Script initializing");
+  const PAGE_SIZE = 20;
 
-  // Helper function to build correct API URLs with stage prefix
   const getApiUrl = (path) => {
     const currentPath = window.location.pathname;
-    const match = currentPath.match(/^(\/[^/]+)?/); // Match /Prod or similar stage
-    const stagePath = match ? match[0] : '';
+    const match = currentPath.match(/^(\/[^/]+)?/);
+    const stagePath = match ? match[0] : "";
     return stagePath + path;
   };
 
@@ -18,19 +17,21 @@
   const teamStatus = document.getElementById("teamStatus");
   const teamIdDisplay = document.getElementById("teamIdDisplay");
   const teamMembersList = document.getElementById("teamMembersList");
+  const teamMembersLoadMore = document.getElementById("teamMembersLoadMore");
   const teamAddForm = document.getElementById("teamAddForm");
   const memberUserId = document.getElementById("memberUserId");
   const memberRole = document.getElementById("memberRole");
   const teamLeaveBtn = document.getElementById("teamLeaveBtn");
   const teamMessage = document.getElementById("teamMessage");
 
-  if (!joinSection || !activeSection) {
-    console.warn("[team-view] Required DOM elements not found. Join section:", !!joinSection, "Active section:", !!activeSection);
+  if (!joinSection || !activeSection || !teamMembersList) {
     return;
   }
-  console.log("[team-view] All DOM elements found, setting up event listeners");
 
   let currentTeamId = null;
+  let nextMembersCursor = null;
+  let members = [];
+  let loadingMembers = false;
 
   const setMessage = (text, tone) => {
     teamMessage.textContent = text;
@@ -39,9 +40,17 @@
     if (tone === "success") teamMessage.classList.add("team-message--success");
   };
 
-  const renderMembers = (members) => {
+  const setLoadMoreState = (cursor, loading = false) => {
+    nextMembersCursor = cursor || null;
+    if (!teamMembersLoadMore) return;
+    teamMembersLoadMore.classList.toggle("team-load-more--hidden", !nextMembersCursor);
+    teamMembersLoadMore.disabled = loading;
+    teamMembersLoadMore.textContent = loading ? "Loading..." : "Load more members";
+  };
+
+  const renderMembers = () => {
     teamMembersList.innerHTML = "";
-    if (!members || members.length === 0) {
+    if (!members.length) {
       const empty = document.createElement("li");
       empty.className = "team-members__empty";
       empty.textContent = "No members found.";
@@ -73,40 +82,59 @@
     activeSection.classList.add("team-panel__section--hidden");
     teamStatus.textContent = "You're not on a team yet.";
     currentTeamId = null;
-    renderMembers([]);
+    members = [];
+    renderMembers();
+    setLoadMoreState(null);
   };
 
-  const showActive = (teamId, members) => {
+  const showActive = (teamId, incomingMembers, nextCursor, append) => {
     joinSection.classList.add("team-panel__section--hidden");
     activeSection.classList.remove("team-panel__section--hidden");
     teamStatus.textContent = "You're on a team.";
-    currentTeamId = teamId;
     teamIdDisplay.textContent = `Team ID: ${teamId}`;
-    renderMembers(members);
+    currentTeamId = teamId;
+    members = append ? members.concat(incomingMembers) : incomingMembers;
+    renderMembers();
+    setLoadMoreState(nextCursor);
   };
 
-  const loadCurrentTeam = async () => {
-    console.log("[team-view] Loading current team data from /api/team/current");
-    setMessage("", "info");
+  const loadCurrentTeam = async ({ append = false } = {}) => {
+    if (append && (!nextMembersCursor || loadingMembers)) {
+      return;
+    }
+
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (append && nextMembersCursor) {
+      params.set("cursor", nextMembersCursor);
+    }
+
+    loadingMembers = true;
+    setLoadMoreState(nextMembersCursor, true);
+    if (!append) {
+      setMessage("", "info");
+    }
+
     try {
-      const response = await fetch(getApiUrl("/api/team/current"));
-      console.log("[team-view] API response status:", response.status);
+      const response = await fetch(getApiUrl(`/api/team/current?${params.toString()}`));
       const data = await response.json();
-      console.log("[team-view] API response data:", data);
       if (!response.ok) {
         throw new Error(data.error || "Unable to load team");
       }
+
       if (!data.teamId) {
-        console.log("[team-view] No team ID in response, showing join section");
         showJoin();
         return;
       }
-      console.log("[team-view] Team loaded:", data.teamId, "with", data.members?.length || 0, "members");
-      showActive(data.teamId, data.members || []);
+
+      showActive(data.teamId, data.members || [], data.nextCursor, append);
     } catch (err) {
-      console.error("[team-view] Error loading team:", err);
-      showJoin();
+      if (!append) {
+        showJoin();
+      }
       setMessage(err.message || "Unable to load team", "error");
+    } finally {
+      loadingMembers = false;
+      setLoadMoreState(nextMembersCursor, false);
     }
   };
 
@@ -123,7 +151,7 @@
       const response = await fetch(getApiUrl("/api/team/join"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId })
+        body: JSON.stringify({ teamId }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -131,7 +159,7 @@
       }
       joinInput.value = "";
       setMessage("Joined team.", "success");
-      showActive(data.teamId, data.members || []);
+      await loadCurrentTeam();
     } catch (err) {
       setMessage(err.message || "Unable to join team", "error");
     }
@@ -151,7 +179,7 @@
         const response = await fetch(getApiUrl("/api/team/create"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ teamName })
+          body: JSON.stringify({ teamName }),
         });
         const data = await response.json();
         if (!response.ok) {
@@ -159,7 +187,7 @@
         }
         createInput.value = "";
         setMessage("Team created. Share the Team ID to invite members.", "success");
-        showActive(data.teamId, data.members || []);
+        await loadCurrentTeam();
       } catch (err) {
         setMessage(err.message || "Unable to create team", "error");
       }
@@ -203,8 +231,8 @@
         body: JSON.stringify({
           userId,
           memberRole: memberRole.value,
-          joinedAt: new Date().toISOString()
-        })
+          joinedAt: new Date().toISOString(),
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -219,6 +247,11 @@
     }
   });
 
+  if (teamMembersLoadMore) {
+    teamMembersLoadMore.addEventListener("click", async () => {
+      await loadCurrentTeam({ append: true });
+    });
+  }
+
   loadCurrentTeam();
-  console.log("[team-view] Initial loadCurrentTeam() call made");
 })();
