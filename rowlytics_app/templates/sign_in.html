@@ -1,34 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sign In | Erglytics</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
-  </head>
-  <body class="auth">
-    <main class="auth__panel">
-      <div class="auth__brand">
-        <img
-          class="logo-mark__image"
-          src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-          alt="Erglytics logo"
-        />
-        <span class="logo-mark__text">Erglytics</span>
-      </div>
+{% extends "base.html" %}
 
-      <h1>Sign in to continue</h1>
-      <p>Erglytics uses AWS Cognito to protect your data.</p>
+{% block title %}Sign In | Erglytics{% endblock %}
 
-      {% if error %}
-        <p class="auth__error">{{ error }}</p>
-      {% endif %}
+{% block body_class %}auth{% endblock %}
 
-      {% if login_url %}
-        <a class="btn auth__cta" href="{{ login_url }}">Sign in / Sign up</a>
-      {% else %}
-        <p class="auth__error">Cognito is not configured yet.</p>
-      {% endif %}
-    </main>
-  </body>
-</html>
+{% block content %}
+<main class="auth__panel">
+  <div class="auth__brand">
+    <img
+      class="logo-mark__image"
+      src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+      alt="Erglytics logo"
+    />
+    <span class="logo-mark__text">Erglytics</span>
+  </div>
+
+  <h1>Sign in to continue</h1>
+  <p>Erglytics uses AWS Cognito to protect your data.</p>
+
+  {% if error %}
+    <p class="auth__error">{{ error }}</p>
+  {% endif %}
+
+  {% if login_url %}
+    <a class="btn btn--primary auth__cta" href="{{ login_url }}">Sign in / Sign up</a>
+  {% else %}
+    <p class="auth__error">Cognito is not configured yet.</p>
+  {% endif %}
+</main>
+{% endblock %}

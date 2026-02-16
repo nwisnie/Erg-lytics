@@ -1,108 +1,59 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{{ card.title }}</title>
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/styles.css') }}"
-    />
-  </head>
-  <body class="capture" data-user-id="{{ user_id }}" data-api-base="{{ request.url_root.rstrip('/') }}">
+{% extends "base.html" %}
 
-  <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
-    <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
-    </svg>
-  </a>
+{% block title %}{{ card.title }}{% endblock %}
 
-  <div id="profileModal" class="profile-modal" aria-hidden="true">
-    <div class="profile-modal__overlay" data-profile-close></div>
-    <div class="profile-modal__content" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-      <button class="profile-modal__close" type="button" data-profile-close aria-label="Close profile">&times;</button>
-      <h2 id="profileModalTitle">Your Profile</h2>
-      <p class="profile-modal__subtitle">Account details for Erglytics.</p>
+{% block body_class %}capture{% endblock %}
 
-      <div class="profile-list">
-        <div class="profile-item">
-          <span class="profile-label">Name</span>
-          <span class="profile-value">{{ user_name or 'Not set' }}</span>
-        </div>
-        <div class="profile-item">
-          <span class="profile-label">Email</span>
-          <span class="profile-value">{{ user_email or 'Not set' }}</span>
-        </div>
-        <div class="profile-item">
-          <span class="profile-label">User ID</span>
-          <span class="profile-value">{{ user_id or 'Not set' }}</span>
-        </div>
-      </div>
+{% block body_attrs %}
+data-user-id="{{ user_id }}"
+data-api-base="{{ request.url_root.rstrip('/') }}"
+{% endblock %}
 
-      <div class="profile-actions">
-        <a class="btn" href="{{ url_for('public.account_settings') }}">Account Settings</a>
-        <a class="btn btn--dark" href="{{ url_for('public.logout') }}">Sign out</a>
-      </div>
-    </div>
-  </div>
+{% block header %}
+  {% include "partials/header.html" %}
+{% endblock %}
 
-<header class="capture__header">
-      <div class="capture__header-inner">
-        <div class="capture__branding">
-            <img
-                class="logo-mark__image"
-                src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-                alt="Erglytics logo"
-            />
-
-          <span class="logo-mark__text">Erglytics</span>
-        </div>
-
-        <a class="capture__back" href="{{ url_for('public.landing_page') }}">
-          Back
-        </a>
-      </div>
-    </header>
-
-    <main class="capture__main">
+{% block content %}
+<main class="page page-pad capture__main">
+  <div class="container container--wide stack">
       <div id="poseStatus" class="pose-status pose-status--hidden">Full body not in frame</div>
 
-      <section class="capture__frame">
-        <div class="capture__viewport">
-          <div id="capturePlaceholder" class="capture__placeholder" aria-live="polite">
-            <p class="capture__placeholder-text">Position your body like the below image</p>
-            <img
-              class="capture__placeholder-image"
-              src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-              alt="Rowing posture guide"
-            />
-            <p class="capture__placeholder-text">Keep full body in frame when working out</p>
-          </div>
-          <video
-            id="liveCamera"
-            class="capture__image"
-            playsinline
-            muted
-            poster="{{ 'images/erg_cool.png' | cloudfront_url }}"
-          ></video>
-          <canvas id="poseOverlay" class="capture__overlay"></canvas>
+    <section class="capture__frame">
+      <div class="capture__viewport">
+        <div id="capturePlaceholder" class="capture__placeholder" aria-live="polite">
+          <p class="capture__placeholder-text">Position your body like the below image</p>
+          <img
+            class="capture__placeholder-image"
+            src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+            alt="Rowing posture guide"
+          />
+          <p class="capture__placeholder-text">Keep full body in frame when working out</p>
         </div>
-      </section>
-
-      <div class="capture__controls">
-        <button id="toggleCamera" class="btn btn--start">Start</button>
-        <button
-          id="switchCamera"
-          class="btn btn--subtle capture__switch--hidden"
-          type="button"
-        >
-          Use Rear Camera
-        </button>
+        <video
+          id="liveCamera"
+          class="capture__image"
+          playsinline
+          muted
+          poster="{{ 'images/erg_cool.png' | cloudfront_url }}"
+        ></video>
+        <canvas id="poseOverlay" class="capture__overlay"></canvas>
       </div>
-    </main>
+    </section>
 
-    <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
+    <div class="capture__controls">
+      <button id="toggleCamera" class="btn btn--start">Start</button>
+      <button
+        id="switchCamera"
+        class="btn btn--subtle capture__switch--hidden"
+        type="button"
+      >
+        Use Rear Camera
+      </button>
+    </div>
+  </div>
+</main>
+{% endblock %}
 
-    <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
-</body>
-</html>
+{% block scripts %}
+  <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
+{% endblock %}
