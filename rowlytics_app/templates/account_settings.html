@@ -1,110 +1,72 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Account Settings | Erglytics</title>
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/styles.css') }}"
-    />
-  </head>
-  <body class="capture account-settings">
-    <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
-      <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
-      </svg>
-    </a>
+{% extends "base.html" %}
 
-    <div id="profileModal" class="profile-modal" aria-hidden="true">
-      <div class="profile-modal__overlay" data-profile-close></div>
-      <div class="profile-modal__content" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-        <button class="profile-modal__close" type="button" data-profile-close aria-label="Close profile">&times;</button>
-        <h2 id="profileModalTitle">Your Profile</h2>
-        <p class="profile-modal__subtitle">Account details for Erglytics.</p>
+{% block title %}Account Settings | Erglytics{% endblock %}
 
-        <div class="profile-list">
-          <div class="profile-item">
-            <span class="profile-label">Name</span>
-            <span class="profile-value">{{ user_name or 'Not set' }}</span>
-          </div>
-          <div class="profile-item">
-            <span class="profile-label">Email</span>
-            <span class="profile-value">{{ user_email or 'Not set' }}</span>
-          </div>
-          <div class="profile-item">
-            <span class="profile-label">User ID</span>
-            <span class="profile-value">{{ user_id or 'Not set' }}</span>
-          </div>
-        </div>
+{% block body_class %}capture account-settings{% endblock %}
 
-        <div class="profile-actions">
-          <a class="btn" href="{{ url_for('public.account_settings') }}">Account Settings</a>
-          <a class="btn btn--dark" href="{{ url_for('public.logout') }}">Sign out</a>
-        </div>
-      </div>
+{% block header %}
+<header class="capture__header">
+  <div class="capture__header-inner">
+    <div class="capture__branding">
+      <img
+        class="logo-mark__image"
+        src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+        alt="Erglytics logo"
+      />
+      <span class="logo-mark__text">Erglytics</span>
     </div>
 
-    <header class="capture__header">
-      <div class="capture__header-inner">
-        <div class="capture__branding">
-          <img
-            class="logo-mark__image"
-            src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-            alt="Erglytics logo"
-          />
-          <span class="logo-mark__text">Erglytics</span>
-        </div>
+    <a class="capture__back" href="{{ url_for('public.landing_page') }}">
+      Back
+    </a>
+  </div>
+</header>
+{% endblock %}
 
-        <a class="capture__back" href="{{ url_for('public.landing_page') }}">
-          Back
-        </a>
+{% block content %}
+<main class="capture__main">
+  <section class="team-panel team-panel--centered">
+    <div class="team-panel__header">
+      <h2>Account Settings</h2>
+      <p>Update your display name or delete your account.</p>
+    </div>
+
+    <form id="accountNameForm" class="team-form">
+      <label class="team-form__label" for="accountName">Display name</label>
+      <div class="team-form__row">
+        <input
+          id="accountName"
+          class="team-form__input"
+          type="text"
+          name="name"
+          value="{{ user_name or '' }}"
+          placeholder="Your name"
+          required
+        />
+        <button class="btn" type="submit">Save</button>
       </div>
-    </header>
+    </form>
 
-    <main class="capture__main">
-      <section class="team-panel team-panel--centered">
-        <div class="team-panel__header">
-          <h2>Account Settings</h2>
-          <p>Update your display name or delete your account.</p>
+    <div class="team-panel__section">
+      <h3>Delete account</h3>
+      <p class="team-panel__hint">This removes your profile, team memberships, and recordings.</p>
+
+      <div id="accountDeleteConfirm" class="account-delete account-delete--hidden">
+        <p class="account-delete__text">Are you sure you want to delete your account?</p>
+        <div class="account-delete__actions">
+          <button id="confirmDeleteAccount" class="btn btn--danger" type="button">Yes, delete</button>
+          <button id="cancelDeleteAccount" class="btn btn--subtle" type="button">Cancel</button>
         </div>
+      </div>
 
-        <form id="accountNameForm" class="team-form">
-          <label class="team-form__label" for="accountName">Display name</label>
-          <div class="team-form__row">
-            <input
-              id="accountName"
-              class="team-form__input"
-              type="text"
-              name="name"
-              value="{{ user_name or '' }}"
-              placeholder="Your name"
-              required
-            />
-            <button class="btn" type="submit">Save</button>
-          </div>
-        </form>
+      <button id="deleteAccountBtn" class="btn btn--danger" type="button">Delete account</button>
+    </div>
 
-        <div class="team-panel__section">
-          <h3>Delete account</h3>
-          <p class="team-panel__hint">This removes your profile, team memberships, and recordings.</p>
+    <p id="accountMessage" class="team-message" aria-live="polite"></p>
+  </section>
+</main>
+{% endblock %}
 
-          <div id="accountDeleteConfirm" class="account-delete account-delete--hidden">
-            <p class="account-delete__text">Are you sure you want to delete your account?</p>
-            <div class="account-delete__actions">
-              <button id="confirmDeleteAccount" class="btn btn--danger" type="button">Yes, delete</button>
-              <button id="cancelDeleteAccount" class="btn btn--subtle" type="button">Cancel</button>
-            </div>
-          </div>
-
-          <button id="deleteAccountBtn" class="btn btn--danger" type="button">Delete account</button>
-        </div>
-
-        <p id="accountMessage" class="team-message" aria-live="polite"></p>
-      </section>
-    </main>
-
-    <script src="{{ url_for('static', filename='js/account_settings.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
-  </body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/account_settings.js') }}" defer></script>
+{% endblock %}
