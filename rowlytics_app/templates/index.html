@@ -12,87 +12,32 @@
 {% endblock %}
 
 {% block content %}
-<header class="masthead">
-    <img
-      class="logo-mark__image"
-      src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-      alt="Erglytics mark"
-    />
-    <span class="logo-mark__text">Erglytics</span>
-</header>
+{% include "partials/masthead.html" %}
 
 <main class="quadrants">
-  <section class="quadrant">
-    <img
-      src="{{ 'images/camera_cool.png' | cloudfront_url }}"
-      alt="Capture Workout"
-      loading="lazy"
-    />
-    <div class="quadrant__copy">
-      <h2>Capture Workout</h2>
-      <p>Record your workout and get feedback live</p>
-      <a
-        class="btn btn--primary"
-        href="{{ url_for('public.template_detail', slug='capture-workout') }}"
-      >
-        Get Started
-      </a>
-    </div>
-  </section>
+  {% set image = 'images/camera_cool.png' %}
+  {% set title = 'Capture Workout' %}
+  {% set description = 'Record your workout and get feedback live' %}
+  {% set href = url_for('public.template_detail', slug='capture-workout') %}
+  {% include "partials/quadrant_card.html" %}
 
-  <section class="quadrant">
-    <img
-      src="{{ 'images/snapshot_cool.png' | cloudfront_url }}"
-      alt="Snapshot Library"
-      loading="lazy"
-    />
-    <div class="quadrant__copy">
-      <h2>Snapshot Library</h2>
-      <p>View important moments captured during workouts</p>
-      <a
-        class="btn btn--primary"
-        href="{{ url_for('public.template_detail', slug='snapshot-library') }}"
-      >
-        Get Started
-      </a>
-    </div>
-  </section>
+  {% set image = 'images/snapshot_cool.png' %}
+  {% set title = 'Snapshot Library' %}
+  {% set description = 'View important moments captured during workouts' %}
+  {% set href = url_for('public.template_detail', slug='snapshot-library') %}
+  {% include "partials/quadrant_card.html" %}
 
-  <section class="quadrant">
-    <img
-      src="{{ 'images/folder_cool.png' | cloudfront_url }}"
-      alt="Workout Summaries"
-      loading="lazy"
-    />
-    <div class="quadrant__copy">
-      <h2>Workout Summaries</h2>
-      <p>View summaries and analytics from previous workouts</p>
-      <a
-        class="btn btn--primary"
-        href="{{ url_for('public.template_detail', slug='workout-summaries') }}"
-      >
-        Get Started
-      </a>
-    </div>
-  </section>
+  {% set image = 'images/folder_cool.png' %}
+  {% set title = 'Workout Summaries' %}
+  {% set description = 'View summaries and analytics from previous workouts' %}
+  {% set href = url_for('public.template_detail', slug='workout-summaries') %}
+  {% include "partials/quadrant_card.html" %}
 
-  <section class="quadrant">
-    <img
-      src="{{ 'images/team_cool.png' | cloudfront_url }}"
-      alt="Team View"
-      loading="lazy"
-    />
-    <div class="quadrant__copy">
-      <h2>Team View</h2>
-      <p>Join a team of like minded athletes and track collective progress</p>
-      <a
-        class="btn btn--primary"
-        href="{{ url_for('public.template_detail', slug='team-view') }}"
-      >
-        Get Started
-      </a>
-    </div>
-  </section>
+  {% set image = 'images/team_cool.png' %}
+  {% set title = 'Team View' %}
+  {% set description = 'Join a team of like minded athletes and track collective progress' %}
+  {% set href = url_for('public.template_detail', slug='team-view') %}
+  {% include "partials/quadrant_card.html" %}
 </main>
 {% endblock %}
 
