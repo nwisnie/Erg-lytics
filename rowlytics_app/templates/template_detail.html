@@ -5,8 +5,9 @@
 {% block body_class %}detail{% endblock %}
 
 {% block content %}
-<main class="detail__wrapper">
-  <a class="detail__back" href="{{ url_for('public.landing_page') }}">
+<main class="page page-pad">
+  <div class="container container--wide stack">
+    <a class="detail__back" href="{{ url_for('public.landing_page') }}">
     Back
   </a>
 
@@ -27,5 +28,6 @@
       </p>
     </div>
   </section>
+  </div>
 </main>
 {% endblock %}

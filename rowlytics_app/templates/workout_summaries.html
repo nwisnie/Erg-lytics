@@ -14,22 +14,24 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
 {% endblock %}
 
 {% block content %}
-    <main class="detail__wrapper">
-      <section class="recordings-panel">
-        <div>
-          <h1>{{ card.title }}</h1>
-          <p>{{ card.blurb }}</p>
-          <br>
-          <p>Review your most recent workouts. Newest appear first.</p>
-        </div>
-        <div class="recordings-panel__header">
-          <h2>Past Workouts</h2>
-          <p>Each entry includes duration, timestamp, summary, and score when available.</p>
-        </div>
-        <div id="workoutsGrid" class="recordings-grid"></div>
-        <p id="workoutsMessage" class="recordings-message" aria-live="polite"></p>
-      </section>
-    </main>
+<main class="page page-pad">
+  <div class="container container--wide stack">
+    <section class="recordings-panel">
+      <div>
+        <h1>{{ card.title }}</h1>
+        <p>{{ card.blurb }}</p>
+        <br>
+        <p>Review your most recent workouts. Newest appear first.</p>
+      </div>
+      <div class="recordings-panel__header">
+        <h2>Past Workouts</h2>
+        <p>Each entry includes duration, timestamp, summary, and score when available.</p>
+      </div>
+      <div id="workoutsGrid" class="recordings-grid"></div>
+      <p id="workoutsMessage" class="recordings-message" aria-live="polite"></p>
+    </section>
+  </div>
+</main>
 {% endblock %}
 
 {% block scripts %}

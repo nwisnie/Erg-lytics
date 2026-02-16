@@ -5,7 +5,8 @@
 {% block body_class %}detail profile{% endblock %}
 
 {% block content %}
-<main class="detail__wrapper">
+<main class="page page-pad">
+  <div class="container container--wide stack">
   <a class="detail__back" href="{{ url_for('public.landing_page') }}">Back</a>
   <section class="detail__card profile-card">
     <div>
@@ -33,5 +34,6 @@
       </div>
     </div>
   </section>
+  </div>
 </main>
 {% endblock %}

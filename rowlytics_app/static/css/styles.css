@@ -93,6 +93,31 @@ body {
   background: linear-gradient(180deg, var(--color-bg-gradient-start) 0%, var(--color-bg-gradient-end) 100%);
 }
 
+/* Normalizing Page Layout Classes */
+.page {
+  flex: 1;
+  display: block;
+}
+
+.page-pad {
+  padding: 2.5rem clamp(1rem, 6vw, 5rem);
+}
+
+.container {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.container--wide {
+  max-width: 1100px;
+}
+
+.stack {
+  display: grid;
+  gap: 1.5rem;
+}
+
 /* Floating profile icon */
 .profile-link {
   position: fixed;
@@ -411,11 +436,7 @@ body {
 
 .capture__main {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.75rem;
-  padding: 2.5rem clamp(1rem, 6vw, 5rem);
+  display: block;
 }
 
 .capture__frame {
