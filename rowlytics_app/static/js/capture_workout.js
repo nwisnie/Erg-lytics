@@ -138,6 +138,58 @@ function drawLandmarks(landmarks) {
   }
 }
 
+function recordLandmarks(landmarks) {
+  const lms = landmarks[0] || [];
+  const videoWidth = video.videoWidth || overlayWidth;
+  const videoHeight = video.videoHeight || overlayHeight;
+  if (!videoWidth || !videoHeight) return;
+
+  const scale = Math.min(overlayWidth / videoWidth, overlayHeight / videoHeight);
+  const offsetX = (overlayWidth - videoWidth * scale) / 2;
+  const offsetY = (overlayHeight - videoHeight * scale) / 2;
+
+  let frame = {
+    header : [],
+    data : []
+  };
+
+  for(const lm in lms)  {
+    if(!lm) continue;
+    if (lm.visibility != null && lm.visibility < 0.3) continue;
+    let x = offsetX + lm.x * videoWidth * scale;
+    let y = offsetY + lm.y * videoHeight * scale;
+    frame.header.push(lm.name);
+    frame.data.push({x, y});
+  }
+
+  let angle = Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x) -
+  Math.atan2(lms[23].y - lms[11].y, lms[23].x - lms[11].x);
+  frame.header.push("body_angle");
+  frame.data.push(angle);
+  let knee_hip = Math.atan2(lms[26].y - lms[24].y, lms[26].x - lms[24].x) -
+  Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
+  let knee_ankle = Math.atan2(lms[28].y - lms[26].y, lms[28].x - lms[26].x) -
+  Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x);
+
+  let hip_ankle = Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x) -
+  Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
+  let knee_angle = Math.acos((knee_hip**2+knee_ankle**2-hip_ankle**2)/(2*knee_hip*knee_ankle));
+  frame.header.push("knee_angle");
+  frame.data.push(knee_angle);
+  let thumb_elbow = Math.atan2(lms[20].y - lms[16].y, lms[20].x - lms[16].x) -
+  Math.atan2(lms[16].y - lms[12].y, lms[16].x - lms[12].x);
+  let index_elbow = Math.atan2(lms[19].y - lms[15].y, lms[19].x - lms[15].x) -
+  Math.atan2(lms[15].y - lms[11].y, lms[15].x - lms[11].x);
+  let wrist_elbow = Math.atan2(lms[18].y - lms[14].y, lms[18].x - lms[14].x) -
+  Math.atan2(lms[14].y - lms[10].y, lms[14].x - lms[10].x);
+  let elbow_angle = Math.acos((thumb_elbow**2+index_elbow**2-wrist_elbow**2)/(2*thumb_elbow*index_elbow));
+  frame.header.push("elbow_angle");
+  frame.data.push(elbow_angle);
+
+  return frame;
+
+}
+
 async function ensurePoseReady() {
   if (poseReady) return true;
   try {
@@ -240,6 +292,28 @@ async function saveRecordingMetadata(metadata) {
     }
   } catch (err) {
     console.warn("Recording metadata not saved:", err);
+  }
+}
+
+async function uploadLandmarks(frame, createdAt) {
+  try {
+    const response = await fetch(`${apiBase}/api/landmarks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        userId,
+        frame,
+        createdAt
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to upload landmarks");
+    }
+  } catch (err) {
+    console.warn("Landmarks not uploaded:", err);
   }
 }
 
@@ -413,6 +487,7 @@ function loop() {
     try {
       const result = poseLandmarker.detectForVideo(video, performance.now());
       drawLandmarks(result.landmarks);
+      let recordedFrame = recordLandmarks(result.landmarks);
       const inFrame = fullBodyInFrame(result.landmarks);
 
       lastInFrame = inFrame;
@@ -422,6 +497,7 @@ function loop() {
           ? "Full body in frame"
           : defaultStatusText;
       }
+
 
       const frameTime = performance.now();
       if (lastFrameTimestamp !== null) {
