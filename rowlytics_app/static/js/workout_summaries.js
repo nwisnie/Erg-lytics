@@ -1,101 +1,109 @@
 (() => {
-  const grid = document.getElementById("recordingsGrid");
-  if (!grid) {
-    console.warn("[recordings] Grid element not found");
+  const grid = document.getElementById("workoutsGrid");
+  const message = document.getElementById("workoutsMessage");
+  const userId = document.body?.dataset?.userId;
+
+  if (!grid || !message) {
+    console.warn("[workouts] Required elements missing");
     return;
   }
 
-  // Helper function to build correct API URLs with stage prefix
-  const getApiUrl = (path) => {
-    const currentPath = window.location.pathname;
-    const match = currentPath.match(/^(\/[^/]+)?/); // Match /Prod or similar stage
-    const stagePath = match ? match[0] : '';
-    return stagePath + path;
-  };
-
-  const message = document.getElementById("recordingsMessage");
-  const userId = document.body?.dataset?.userId;
-  console.log("[recordings] Page loaded. Grid found:", !!grid, "User ID:", userId);
-
   if (!userId) {
-    console.error("[recordings] No user ID found in data-user-id attribute");
-    if (message) {
-      message.textContent = "No user ID available to load recordings.";
-      message.classList.add("recordings-message--error");
-    }
+    message.textContent = "No user ID found.";
+    message.classList.add("recordings-message--error");
     return;
   }
 
   const setMessage = (text, tone) => {
-    if (!message) return;
     message.textContent = text;
     message.classList.remove("recordings-message--error", "recordings-message--success");
     if (tone === "error") message.classList.add("recordings-message--error");
     if (tone === "success") message.classList.add("recordings-message--success");
   };
 
+  const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+
+  const getApiUrl = (path) => {
+    if (apiBase) return apiBase + path;
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const first = parts[0];
+    const stage = first && ["Prod", "Stage", "Dev"].includes(first) ? `/${first}` : "";
+    return stage + path;
+  };
+
+  const formatDuration = (seconds) => {
+    if (!seconds && seconds !== 0) return "Unknown duration";
+    const total = Math.max(0, Math.round(seconds));
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return mins ? `${mins}m ${secs}s` : `${secs}s`;
+  };
+
   const renderEmpty = () => {
     grid.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "recordings-empty";
-    empty.textContent = "No recordings yet.";
+    empty.textContent = "No workouts yet. Start a session to see it here.";
     grid.appendChild(empty);
   };
 
-  const renderRecordings = (recordings) => {
+  const renderWorkouts = (workouts) => {
     grid.innerHTML = "";
-    if (!recordings || recordings.length === 0) {
+    if (!workouts || workouts.length === 0) {
       renderEmpty();
       return;
     }
 
-    recordings.forEach((recording) => {
+    workouts.forEach((workout) => {
       const card = document.createElement("article");
-      card.className = "recording-card";
+      card.className = "recording-card workout-card";
 
-      const video = document.createElement("video");
-      video.controls = true;
-      video.preload = "metadata";
-      if (recording.playbackUrl) {
-        video.src = recording.playbackUrl;
-      }
+      const header = document.createElement("div");
+      header.className = "workout-card__row";
+      const title = document.createElement("h3");
+      title.className = "workout-card__title";
+      title.textContent = new Date(workout.completedAt || workout.createdAt || Date.now()).toLocaleString();
+      const duration = document.createElement("span");
+      duration.className = "workout-card__pill";
+      duration.textContent = formatDuration(workout.durationSec);
+      header.appendChild(title);
+      header.appendChild(duration);
 
-      const meta = document.createElement("div");
-      meta.className = "recording-card__meta";
-      const createdAt = recording.createdAt
-        ? new Date(recording.createdAt).toLocaleString()
-        : "Unknown date";
-      meta.textContent = createdAt;
+      const summary = document.createElement("p");
+      summary.className = "workout-card__summary";
+      summary.textContent = workout.summary || "No summary provided.";
 
-      card.appendChild(video);
-      card.appendChild(meta);
+      const score = document.createElement("p");
+      score.className = "workout-card__meta";
+      const scoreValue = workout.workoutScore;
+      score.textContent = scoreValue === undefined || scoreValue === null
+        ? "Score: not yet calculated"
+        : `Score: ${scoreValue}`;
+
+      card.appendChild(header);
+      card.appendChild(summary);
+      card.appendChild(score);
       grid.appendChild(card);
     });
   };
 
-  const loadRecordings = async () => {
-    const apiUrl = getApiUrl(`/api/recordings/${encodeURIComponent(userId)}`);
-    console.log("[recordings] Starting to load recordings from:", apiUrl);
-    setMessage("Loading recordings...", "info");
+  const loadWorkouts = async () => {
+    const apiUrl = getApiUrl("/api/workouts");
+    setMessage("Loading workouts...");
     try {
-      console.log("[recordings] Fetching from API...");
       const response = await fetch(apiUrl);
-      console.log("[recordings] Fetch response status:", response.status);
       const payload = await response.json();
-      console.log("[recordings] API response payload:", payload);
       if (!response.ok) {
-        throw new Error(payload.error || "Unable to load recordings");
+        throw new Error(payload.error || "Unable to load workouts");
       }
-      console.log("[recordings] Successfully loaded", payload.recordings?.length || 0, "recordings");
-      renderRecordings(payload.recordings || []);
-      setMessage("", "success");
+      renderWorkouts(payload.workouts || []);
+      setMessage("");
     } catch (err) {
-      console.error("[recordings] Error loading recordings:", err);
+      console.error("[workouts] Failed to load workouts", err);
       renderEmpty();
-      setMessage(err.message || "Unable to load recordings", "error");
+      setMessage(err.message || "Unable to load workouts", "error");
     }
   };
 
-  console.log("[recordings] Calling loadRecordings()");
-  loadRecordings();
+  loadWorkouts();
 })();

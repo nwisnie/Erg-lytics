@@ -1,0 +1,17 @@
+<header class="capture__header">
+  <div class="capture__header-inner">
+    <div class="capture__branding">
+      <img
+        class="logo-mark__image"
+        src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+        alt="Erglytics logo"
+      />
+      <span class="logo-mark__text">Erglytics</span>
+    </div>
+
+    <a class="capture__back"
+       href="{{ back_href | default(url_for('public.landing_page')) }}">
+      Back
+    </a>
+  </div>
+</header>

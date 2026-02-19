@@ -5,6 +5,7 @@ import {
 
 const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
+const switchCameraBtn = document.getElementById("switchCamera");
 const poseStatus = document.getElementById("poseStatus");
 const overlay = document.getElementById("poseOverlay");
 const overlayCtx = overlay ? overlay.getContext("2d") : null;
@@ -21,12 +22,16 @@ const userId = document.body?.dataset?.userId || "demo-user";
 const recordingDurationMs = 5000;
 const inFrameThresholdMs = 5000;
 const recordingCooldownMs = 3000;
+const workoutSummaryText = "Workout session";
+const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 let stream = null;
 let poseLandmarker = null;
 let running = false;
 let lastVideoTime = -1;
 let poseReady = false;
+let preferredFacingMode = "user";
+let cameraSwitchInProgress = false;
 
 let inFrameMs = 0;
 let lastFrameTimestamp = null;
@@ -40,6 +45,7 @@ let lastInFrame = false;
 let overlayWidth = 0;
 let overlayHeight = 0;
 let overlayDpr = 1;
+let workoutStartAt = null;
 
 // for final thing maybe we
 // only require like left should hip and knee
@@ -55,6 +61,67 @@ const REQUIRED = [
   27,  // left ankle
   28   // right ankle
 ];
+
+function isLikelyMobileDevice() {
+  if (navigator.userAgentData && typeof navigator.userAgentData.mobile === "boolean") {
+    return navigator.userAgentData.mobile;
+  }
+  if (mobileUserAgentRegex.test(navigator.userAgent || "")) {
+    return true;
+  }
+  return Boolean(
+    window.matchMedia &&
+    window.matchMedia("(pointer: coarse)").matches &&
+    window.matchMedia("(max-width: 1024px)").matches
+  );
+}
+
+function updateSwitchCameraButton() {
+  if (!switchCameraBtn) return;
+  switchCameraBtn.textContent = preferredFacingMode === "user"
+    ? "Use Rear Camera"
+    : "Use Front Camera";
+}
+
+function setupCameraSwitchControl() {
+  if (!switchCameraBtn) return;
+  if (isLikelyMobileDevice()) {
+    switchCameraBtn.classList.remove("capture__switch--hidden");
+    updateSwitchCameraButton();
+    return;
+  }
+  switchCameraBtn.classList.add("capture__switch--hidden");
+}
+
+function applyViewportMirrorState() {
+  if (!viewport) return;
+  // Front camera previews are mirrored by many browsers; force an unmirrored view.
+  viewport.classList.toggle("capture__viewport--unmirror", preferredFacingMode === "user");
+}
+
+async function getCameraStream() {
+  const attempts = [
+    { video: { facingMode: { exact: preferredFacingMode } }, audio: false },
+    { video: { facingMode: { ideal: preferredFacingMode } }, audio: false },
+    { video: true, audio: false }
+  ];
+
+  let lastError = null;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Unable to access camera");
+}
+
+async function attachStream(nextStream) {
+  video.srcObject = nextStream;
+  await video.play();
+  resizeOverlay();
+}
 
 async function initPose() {
   const vision = await FilesetResolver.forVisionTasks(MP_WASM_PATH);
@@ -406,9 +473,37 @@ async function recordClip() {
   }, recordingDurationMs);
 }
 
+async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
+  if (!apiBase) {
+    console.warn("Workout not saved: missing apiBase");
+    return;
+  }
+  try {
+    const response = await fetch(`${apiBase}/api/workouts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        durationSec,
+        startedAt,
+        completedAt,
+        summary: workoutSummaryText,
+        workoutScore: null
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Unable to save workout");
+    }
+    poseStatus.textContent = "Workout saved";
+  } catch (err) {
+    console.warn("Workout not saved:", err);
+    poseStatus.textContent = "Workout ended (not saved)";
+  }
+}
+
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    stream = await getCameraStream();
   } catch (err) {
     console.error("Camera access failed:", err);
     alert("Camera access failed. Check browser permissions.");
@@ -416,9 +511,7 @@ async function startCamera() {
   }
 
   try {
-    video.srcObject = stream;
-    await video.play();
-    resizeOverlay();
+    await attachStream(stream);
   } catch (err) {
     console.error("Camera preview failed:", err);
     stopCamera();
@@ -432,14 +525,17 @@ async function startCamera() {
   poseStatus.classList.remove("ready");
   clearOverlay();
 
+  // Update CTA immediately once camera preview is live.
+  toggleBtn.textContent = "Stop";
+  toggleBtn.classList.remove("btn--start");
+  toggleBtn.classList.add("btn--danger");
+  applyViewportMirrorState();
+
   const isPoseReady = await ensurePoseReady();
   running = isPoseReady;
   lastVideoTime = -1;
   resetRecordingTimers();
-
-  toggleBtn.textContent = "Stop";
-  toggleBtn.classList.remove("btn--subtle");
-  toggleBtn.classList.add("btn--danger");
+  workoutStartAt = new Date().toISOString();
 
   if (running) {
     requestAnimationFrame(loop);
@@ -464,10 +560,57 @@ function stopCamera() {
   hidePoseStatus();
   lastVideoTime = -1;
   resetRecordingTimers();
+  if (viewport) {
+    viewport.classList.remove("capture__viewport--unmirror");
+  }
+
+  if (workoutStartAt) {
+    const completedAt = new Date().toISOString();
+    const durationMs = Date.parse(completedAt) - Date.parse(workoutStartAt);
+    const durationSec = Math.max(1, Math.round(durationMs / 1000));
+    saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
+  }
+  workoutStartAt = null;
 
   toggleBtn.textContent = "Start";
   toggleBtn.classList.remove("btn--danger");
-  toggleBtn.classList.add("btn--subtle");
+  toggleBtn.classList.add("btn--start");
+}
+
+async function switchCamera() {
+  if (!stream || cameraSwitchInProgress) return;
+  if (recordingInProgress) {
+    poseStatus.textContent = "Wait for clip recording to finish before switching camera.";
+    return;
+  }
+
+  const previousFacingMode = preferredFacingMode;
+  const currentStream = stream;
+  preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
+  updateSwitchCameraButton();
+  applyViewportMirrorState();
+  cameraSwitchInProgress = true;
+
+  try {
+    const nextStream = await getCameraStream();
+    try {
+      await attachStream(nextStream);
+      stream = nextStream;
+      currentStream.getTracks().forEach((track) => track.stop());
+      poseStatus.textContent = "Camera switched";
+    } catch (attachErr) {
+      nextStream.getTracks().forEach((track) => track.stop());
+      throw attachErr;
+    }
+  } catch (err) {
+    preferredFacingMode = previousFacingMode;
+    updateSwitchCameraButton();
+    applyViewportMirrorState();
+    console.error("Camera switch failed:", err);
+    poseStatus.textContent = "Unable to switch camera";
+  } finally {
+    cameraSwitchInProgress = false;
+  }
 }
 
 function loop() {
@@ -534,3 +677,18 @@ toggleBtn.addEventListener("click", async () => {
 
   await startCamera();
 });
+
+if (switchCameraBtn) {
+  switchCameraBtn.addEventListener("click", async () => {
+    if (!stream) {
+      preferredFacingMode = preferredFacingMode === "user" ? "environment" : "user";
+      updateSwitchCameraButton();
+      applyViewportMirrorState();
+      return;
+    }
+    await switchCamera();
+  });
+}
+
+setupCameraSwitchControl();
+applyViewportMirrorState();

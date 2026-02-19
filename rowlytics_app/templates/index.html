@@ -1,158 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Erglytics</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
-  </head>
-  <body>
+{% extends "base.html" %}
 
-  <a class="profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
-    <svg class="profile-link__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" />
-    </svg>
-  </a>
+{% block title %}Erglytics{% endblock %}
 
-  <div id="profileModal" class="profile-modal" aria-hidden="true">
-    <div class="profile-modal__overlay" data-profile-close></div>
-    <div class="profile-modal__content" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
-      <button class="profile-modal__close" type="button" data-profile-close aria-label="Close profile">&times;</button>
-      <h2 id="profileModalTitle">Your Profile</h2>
-      <p class="profile-modal__subtitle">Account details for Erglytics.</p>
+{% block head_extra %}
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+  rel="stylesheet"
+/>
+{% endblock %}
 
-      <div class="profile-list">
-        <div class="profile-item">
-          <span class="profile-label">Name</span>
-          <span class="profile-value">{{ user_name or 'Not set' }}</span>
-        </div>
-        <div class="profile-item">
-          <span class="profile-label">Email</span>
-          <span class="profile-value">{{ user_email or 'Not set' }}</span>
-        </div>
-        <div class="profile-item">
-          <span class="profile-label">User ID</span>
-          <span class="profile-value">{{ user_id or 'Not set' }}</span>
-        </div>
-      </div>
+{% block content %}
+{% include "partials/masthead.html" %}
 
-      <div class="profile-actions">
-        <a class="btn" href="{{ url_for('public.account_settings') }}">Account Settings</a>
-        <a class="btn btn--dark" href="{{ url_for('public.logout') }}">Sign out</a>
-      </div>
-    </div>
-  </div>
+<main class="quadrants">
+  {% set image = 'images/camera_cool.png' %}
+  {% set title = 'Capture Workout' %}
+  {% set description = 'Record your workout and get feedback live' %}
+  {% set href = url_for('public.template_detail', slug='capture-workout') %}
+  {% include "partials/quadrant_card.html" %}
 
-<header class="masthead">
-        <img
-          class="logo-mark__image"
-          src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-          alt="Erglytics mark"
-        />
-        <span class="logo-mark__text">Erglytics</span>
-    </header>
+  {% set image = 'images/snapshot_cool.png' %}
+  {% set title = 'Snapshot Library' %}
+  {% set description = 'View important moments captured during workouts' %}
+  {% set href = url_for('public.template_detail', slug='snapshot-library') %}
+  {% include "partials/quadrant_card.html" %}
 
-    <main class="quadrants">
-      <section class="quadrant">
-        <img
-          src="{{ 'images/camera_cool.png' | cloudfront_url }}"
-          alt="Capture Workout"
-          loading="lazy"
-        />
-        <div class="quadrant__copy">
-          <h2>Capture Workout</h2>
-          <p>Record your workout and get feedback live</p>
-          <a
-            class="btn btn--primary"
-            href="{{ url_for('public.template_detail', slug='capture-workout') }}"
-          >
-            Get Started
-          </a>
-        </div>
-      </section>
+  {% set image = 'images/folder_cool.png' %}
+  {% set title = 'Workout Summaries' %}
+  {% set description = 'View summaries and analytics from previous workouts' %}
+  {% set href = url_for('public.template_detail', slug='workout-summaries') %}
+  {% include "partials/quadrant_card.html" %}
 
-      <section class="quadrant">
-        <img
-          src="{{ 'images/snapshot_cool.png' | cloudfront_url }}"
-          alt="Snapshot Library"
-          loading="lazy"
-        />
-        <div class="quadrant__copy">
-          <h2>Snapshot Library</h2>
-          <p>View important moments captured during workouts</p>
-          <a
-            class="btn btn--primary"
-            href="{{ url_for('public.template_detail', slug='snapshot-library') }}"
-          >
-            Get Started
-          </a>
-        </div>
-      </section>
+  {% set image = 'images/team_cool.png' %}
+  {% set title = 'Team View' %}
+  {% set description = 'Join a team of like minded athletes and track collective progress' %}
+  {% set href = url_for('public.template_detail', slug='team-view') %}
+  {% include "partials/quadrant_card.html" %}
+</main>
+{% endblock %}
 
-      <section class="quadrant">
-        <img
-          src="{{ 'images/folder_cool.png' | cloudfront_url }}"
-          alt="Workout Summaries"
-          loading="lazy"
-        />
-        <div class="quadrant__copy">
-          <h2>Workout Summaries</h2>
-          <p>View summaries and analytics from previous workouts</p>
-          <a
-            class="btn btn--primary"
-            href="{{ url_for('public.template_detail', slug='workout-summaries') }}"
-          >
-            Get Started
-          </a>
-        </div>
-      </section>
-
-      <section class="quadrant">
-        <img
-          src="{{ 'images/team_cool.png' | cloudfront_url }}"
-          alt="Team View"
-          loading="lazy"
-        />
-        <div class="quadrant__copy">
-          <h2>Team View</h2>
-          <p>Join a team of like minded athletes and track collective progress</p>
-          <a
-            class="btn btn--primary"
-            href="{{ url_for('public.template_detail', slug='team-view') }}"
-          >
-            Get Started
-          </a>
-        </div>
-      </section>
-    </main>
-
-    <script>
-      fetch("/api/count/capture-workout")
-        .then(r => r.json())
-        .then(data => {
-          document.getElementById("cw-views").textContent = data.count;
-        })
-        .catch(err => console.error("Failed to load count:", err));
-    </script>
-
-    <footer class="footer">
-      <div class="footer__socials">
-        <a href="" target="_blank" rel="noreferrer">Twitter</a>
-        <a href="" target="_blank" rel="noreferrer">Instagram</a>
-        <a href="" target="_blank" rel="noreferrer">LinkedIn</a>
-      </div>
-      <div class="footer__links">
-        <a href="">Help</a>
-        <a href="">Resources</a>
-        <a href="https://github.com/nwisnie/Rowlytics" target="_blank" rel="noreferrer">GitHub</a>
-      </div>
-    </footer>
-    <script src="{{ url_for('static', filename='js/profile_modal.js') }}" defer></script>
-</body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/index.js') }}" defer></script>
+{% endblock %}

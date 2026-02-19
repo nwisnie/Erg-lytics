@@ -1,0 +1,14 @@
+<section class="quadrant">
+  <img
+    src="{{ image | cloudfront_url }}"
+    alt="{{ title }}"
+    loading="lazy"
+  />
+  <div class="quadrant__copy">
+    <h2>{{ title }}</h2>
+    <p>{{ description }}</p>
+    <a class="btn btn--primary" href="{{ href }}">
+      Get Started
+    </a>
+  </div>
+</section>
