@@ -1,6 +1,9 @@
 """API routes for Rowlytics."""
 
+import base64
+import json
 import logging
+import os
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -14,6 +17,7 @@ except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
 from rowlytics_app.auth.cognito import delete_cognito_user
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
+    fetch_team_members_page,
     get_ddb_tables,
     get_recordings_table,
     get_team,
@@ -21,8 +25,9 @@ from rowlytics_app.services.dynamodb import (
     get_teams_table,
     get_workouts_table,
     list_recordings,
+    list_recordings_page,
     list_team_memberships,
-    list_workouts,
+    list_workouts_page,
     now_iso,
     team_name_exists,
 )
@@ -33,6 +38,65 @@ logger = logging.getLogger(__name__)
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 ALLOWED_TEAM_ROLES = {"coach", "rower"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using default %d", name, raw, default)
+        return default
+
+
+MAX_PAGE_SIZE = max(1, _env_int("ROWLYTICS_MAX_PAGE_SIZE", 50))
+TEAM_MEMBERS_PAGE_SIZE = max(
+    1,
+    min(_env_int("ROWLYTICS_TEAM_MEMBERS_PAGE_SIZE", 20), MAX_PAGE_SIZE),
+)
+RECORDINGS_PAGE_SIZE = max(
+    1,
+    min(_env_int("ROWLYTICS_RECORDINGS_PAGE_SIZE", 8), MAX_PAGE_SIZE),
+)
+WORKOUTS_PAGE_SIZE = max(
+    1,
+    min(_env_int("ROWLYTICS_WORKOUTS_PAGE_SIZE", 8), MAX_PAGE_SIZE),
+)
+
+
+def _parse_limit(raw_limit: str | None, default: int) -> int:
+    if raw_limit is None:
+        return default
+    try:
+        parsed = int(raw_limit)
+    except ValueError as err:
+        raise ValueError("limit must be an integer") from err
+    if parsed < 1:
+        raise ValueError("limit must be >= 1")
+    return min(parsed, MAX_PAGE_SIZE)
+
+
+def _encode_cursor(last_evaluated_key: dict | None) -> str | None:
+    if not last_evaluated_key:
+        return None
+    payload = json.dumps(last_evaluated_key, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii")
+
+
+def _decode_cursor(cursor: str | None) -> dict | None:
+    if not cursor:
+        return None
+    try:
+        padding = "=" * (-len(cursor) % 4)
+        decoded = base64.urlsafe_b64decode((cursor + padding).encode("ascii"))
+        payload = json.loads(decoded.decode("utf-8"))
+    except Exception as err:
+        raise ValueError("cursor is invalid") from err
+    if not isinstance(payload, dict):
+        raise ValueError("cursor is invalid")
+    return payload
 
 
 @api_bp.route("/health", methods=["GET"])
@@ -48,21 +112,29 @@ def list_team_members(team_id):
         return jsonify({"error": "team_id is required"}), 400
 
     try:
+        limit = _parse_limit(request.args.get("limit"), TEAM_MEMBERS_PAGE_SIZE)
+        cursor = _decode_cursor(request.args.get("cursor"))
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+
+    try:
         users_table, team_members_table = get_ddb_tables()
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
     try:
-        members = fetch_team_members(
+        members, next_key = fetch_team_members_page(
             users_table,
             team_members_table,
             team_id,
             ALLOWED_TEAM_ROLES,
+            limit=limit,
+            exclusive_start_key=cursor,
         )
     except Exception as err:
         return jsonify({"error": "Unable to query team members", "detail": str(err)}), 500
 
-    return jsonify({"teamId": team_id, "members": members})
+    return jsonify({"teamId": team_id, "members": members, "nextCursor": _encode_cursor(next_key)})
 
 
 @api_bp.route("/teams/<team_id>/members", methods=["POST"])
@@ -94,6 +166,20 @@ def add_team_member(team_id):
 
     if not user_response.get("Item"):
         return jsonify({"error": "User does not exist"}), 404
+
+    try:
+        existing_membership = get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to check user team", "detail": str(err)}), 500
+
+    if existing_membership:
+        existing_team_id = existing_membership.get("teamId")
+        if existing_team_id == team_id:
+            return jsonify({"error": "User already on this team", "teamId": existing_team_id}), 409
+        return jsonify({
+            "error": "User is already on a team. User must leave current team first.",
+            "teamId": existing_team_id,
+        }), 409
 
     item = {
         "teamId": team_id,
@@ -128,6 +214,12 @@ def current_team():
         return jsonify({"error": "authentication required"}), 401
 
     try:
+        limit = _parse_limit(request.args.get("limit"), TEAM_MEMBERS_PAGE_SIZE)
+        cursor = _decode_cursor(request.args.get("cursor"))
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+
+    try:
         users_table, team_members_table = get_ddb_tables()
     except RuntimeError as err:
         logger.error(f"GET /team/current: DynamoDB tables not available: {err}")
@@ -142,20 +234,22 @@ def current_team():
 
     if not membership:
         logger.info(f"GET /team/current: user {user_id} not on a team")
-        return jsonify({"teamId": None, "members": []})
+        return jsonify({"teamId": None, "members": [], "nextCursor": None})
 
     team_id = membership.get("teamId")
     logger.debug(f"GET /team/current: user {user_id} is on team {team_id}")
 
     try:
-        members = fetch_team_members(
+        members, next_key = fetch_team_members_page(
             users_table,
             team_members_table,
             team_id,
             ALLOWED_TEAM_ROLES,
+            limit=limit,
+            exclusive_start_key=cursor,
         )
         logger.info(
-            "GET /team/current: successfully loaded team %s with %d members",
+            "GET /team/current: successfully loaded team %s page with %d members",
             team_id,
             len(members),
         )
@@ -167,6 +261,7 @@ def current_team():
         "teamId": team_id,
         "members": members,
         "memberRole": membership.get("memberRole"),
+        "nextCursor": _encode_cursor(next_key),
     })
 
 
@@ -549,6 +644,12 @@ def list_recordings_for_user(user_id):
         return jsonify({"error": "user_id is required"}), 400
 
     try:
+        limit = _parse_limit(request.args.get("limit"), RECORDINGS_PAGE_SIZE)
+        cursor = _decode_cursor(request.args.get("cursor"))
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+
+    try:
         recordings_table = get_recordings_table()
     except RuntimeError as err:
         logger.error(f"GET /recordings: recordings table not available: {err}")
@@ -556,8 +657,13 @@ def list_recordings_for_user(user_id):
 
     try:
         logger.debug(f"GET /recordings: querying recordings for user {user_id}")
-        items = list_recordings(recordings_table, user_id)
-        logger.info(f"GET /recordings: found {len(items)} recordings for user {user_id}")
+        items, next_key = list_recordings_page(
+            recordings_table,
+            user_id,
+            limit=limit,
+            exclusive_start_key=cursor,
+        )
+        logger.info("GET /recordings: found %d recordings for user %s", len(items), user_id)
     except Exception as err:
         logger.error(f"GET /recordings: failed to load recordings: {err}", exc_info=True)
         return jsonify({"error": "Unable to load recordings", "detail": str(err)}), 500
@@ -591,7 +697,11 @@ def list_recordings_for_user(user_id):
             item["playbackUrl"] = None
 
     logger.info("GET /recordings: returning %d recordings with playback URLs", len(items))
-    return jsonify({"userId": user_id, "recordings": items})
+    return jsonify({
+        "userId": user_id,
+        "recordings": items,
+        "nextCursor": _encode_cursor(next_key),
+    })
 
 
 @api_bp.route("/workouts", methods=["POST"])
@@ -608,6 +718,7 @@ def save_workout():
     summary = (data.get("summary") or "").strip()
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
+    created_at = data.get("createdAt") or completed_at
 
     try:
         duration_value = float(duration_sec)
@@ -630,6 +741,7 @@ def save_workout():
         "userId": user_id,
         "workoutId": workout_id,
         "durationSec": duration_value,
+        "createdAt": created_at,
         "completedAt": completed_at,
     }
 
@@ -663,19 +775,30 @@ def list_workouts_for_current_user():
         return jsonify({"error": "authentication required"}), 401
 
     try:
+        limit = _parse_limit(request.args.get("limit"), WORKOUTS_PAGE_SIZE)
+        cursor = _decode_cursor(request.args.get("cursor"))
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+
+    try:
         workouts_table = get_workouts_table()
     except RuntimeError as err:
         logger.warning("GET /workouts: workouts table not configured: %s", err)
         return jsonify({"error": str(err)}), 500
 
     try:
-        items = list_workouts(workouts_table, user_id)
+        items, next_key = list_workouts_page(
+            workouts_table,
+            user_id,
+            limit=limit,
+            exclusive_start_key=cursor,
+        )
     except Exception as err:
         logger.error("GET /workouts: failed to load workouts: %s", err, exc_info=True)
         return jsonify({"error": "Unable to load workouts", "detail": str(err)}), 500
 
-    def sort_key(item):
-        return item.get("completedAt") or item.get("createdAt") or ""
-
-    items_sorted = sorted(items, key=sort_key, reverse=True)
-    return jsonify({"userId": user_id, "workouts": items_sorted})
+    return jsonify({
+        "userId": user_id,
+        "workouts": items,
+        "nextCursor": _encode_cursor(next_key),
+    })

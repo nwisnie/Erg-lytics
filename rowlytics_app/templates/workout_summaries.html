@@ -28,6 +28,13 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         <p>Each entry includes duration, timestamp, summary, and score when available.</p>
       </div>
       <div id="workoutsGrid" class="recordings-grid"></div>
+      <button
+        id="workoutsLoadMore"
+        class="btn btn--subtle recordings-load-more recordings-load-more--hidden"
+        type="button"
+      >
+        Load more summaries
+      </button>
       <p id="workoutsMessage" class="recordings-message" aria-live="polite"></p>
     </section>
   </div>

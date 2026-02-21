@@ -1,12 +1,14 @@
 (() => {
+  const PAGE_SIZE = 8;
+
   const grid = document.getElementById("recordingsGrid");
-  if (!grid) {
-    console.warn("[recordings] Grid element not found");
-    return;
-  }
+  const message = document.getElementById("recordingsMessage");
+  const loadMoreBtn = document.getElementById("recordingsLoadMore");
+  const userId = document.body?.dataset?.userId;
+
+  if (!grid || !message) return;
 
   const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
-
   const getApiUrl = (path) => {
     if (apiBase) return apiBase + path;
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -15,25 +17,29 @@
     return stage + path;
   };
 
-  const message = document.getElementById("recordingsMessage");
-  const userId = document.body?.dataset?.userId;
-  console.log("[recordings] Page loaded. Grid found:", !!grid, "User ID:", userId);
-
   if (!userId) {
-    console.error("[recordings] No user ID found in data-user-id attribute");
-    if (message) {
-      message.textContent = "No user ID available to load recordings.";
-      message.classList.add("recordings-message--error");
-    }
+    message.textContent = "No user ID available to load recordings.";
+    message.classList.add("recordings-message--error");
     return;
   }
 
+  let recordings = [];
+  let nextCursor = null;
+  let loading = false;
+
   const setMessage = (text, tone) => {
-    if (!message) return;
     message.textContent = text;
     message.classList.remove("recordings-message--error", "recordings-message--success");
     if (tone === "error") message.classList.add("recordings-message--error");
     if (tone === "success") message.classList.add("recordings-message--success");
+  };
+
+  const setLoadMoreState = (cursor, isLoading = false) => {
+    nextCursor = cursor || null;
+    if (!loadMoreBtn) return;
+    loadMoreBtn.classList.toggle("recordings-load-more--hidden", !nextCursor);
+    loadMoreBtn.disabled = isLoading;
+    loadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
   };
 
   const renderEmpty = () => {
@@ -44,9 +50,9 @@
     grid.appendChild(empty);
   };
 
-  const renderRecordings = (recordings) => {
+  const renderRecordings = () => {
     grid.innerHTML = "";
-    if (!recordings || recordings.length === 0) {
+    if (!recordings.length) {
       renderEmpty();
       return;
     }
@@ -75,29 +81,54 @@
     });
   };
 
-  const loadRecordings = async () => {
-    const apiUrl = getApiUrl(`/api/recordings/${encodeURIComponent(userId)}`);
-    console.log("[recordings] Starting to load recordings from:", apiUrl);
-    setMessage("Loading recordings...", "info");
+  const loadRecordings = async ({ append = false } = {}) => {
+    if (append && (!nextCursor || loading)) return;
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (append && nextCursor) {
+      params.set("cursor", nextCursor);
+    }
+
+    loading = true;
+    setLoadMoreState(nextCursor, true);
+    if (!append) {
+      setMessage("Loading recordings...");
+    }
+
     try {
-      console.log("[recordings] Fetching from API...");
-      const response = await fetch(apiUrl);
-      console.log("[recordings] Fetch response status:", response.status);
+      const response = await fetch(
+        getApiUrl(`/api/recordings/${encodeURIComponent(userId)}?${params.toString()}`),
+      );
       const payload = await response.json();
-      console.log("[recordings] API response payload:", payload);
       if (!response.ok) {
         throw new Error(payload.error || "Unable to load recordings");
       }
-      console.log("[recordings] Successfully loaded", payload.recordings?.length || 0, "recordings");
-      renderRecordings(payload.recordings || []);
-      setMessage("", "success");
+
+      recordings = append
+        ? recordings.concat(payload.recordings || [])
+        : (payload.recordings || []);
+      renderRecordings();
+      setLoadMoreState(payload.nextCursor, false);
+      setMessage("");
     } catch (err) {
-      console.error("[recordings] Error loading recordings:", err);
-      renderEmpty();
+      if (!append) {
+        recordings = [];
+        renderEmpty();
+      }
       setMessage(err.message || "Unable to load recordings", "error");
+      setLoadMoreState(nextCursor, false);
+    } finally {
+      loading = false;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = false;
+      }
     }
   };
 
-  console.log("[recordings] Calling loadRecordings()");
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", async () => {
+      await loadRecordings({ append: true });
+    });
+  }
+
   loadRecordings();
 })();
