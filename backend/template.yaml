@@ -117,6 +117,22 @@ Resources:
         - AttributeName: workoutId
           KeyType: RANGE
 
+  LandMarksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: RowlyticsLandmarks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: recordingId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: recordingId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+
   UploadBucket:
     Type: AWS::S3::Bucket
     Properties:

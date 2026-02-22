@@ -15,6 +15,7 @@ from rowlytics_app.auth.cognito import delete_cognito_user
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     get_ddb_tables,
+    get_landmarks_table,
     get_recordings_table,
     get_team,
     get_team_membership,
@@ -679,3 +680,37 @@ def list_workouts_for_current_user():
 
     items_sorted = sorted(items, key=sort_key, reverse=True)
     return jsonify({"userId": user_id, "workouts": items_sorted})
+
+
+@api_bp.route("/landmarks", methods=["POST"])
+def save_landmark():
+    table = get_landmarks_table()
+    try:
+        data = request.get_json(silent=True) or {}
+
+        user_id = data.get("userId")
+        frame = data.get("frame")
+        created_at = data.get("createdAt") or now_iso()
+
+        if not user_id:
+            return jsonify({"error": "authentication required"}), 401
+
+        if not created_at:
+            created_at = datetime.utcnow().isoformat()
+
+        logger.info("POST /landmarks: user=%s, frame=%s, createdAt=%s", user_id, frame, created_at)
+
+        # Placeholder for saving landmark data to a database or storage
+        # For example, you could save to DynamoDB or S3 here
+        table.put_item(
+            Item={
+                "userId": user_id,
+                "createdAt": created_at,
+                "frame": frame
+                }
+        )
+
+        return jsonify({"message": "Landmarks stored"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

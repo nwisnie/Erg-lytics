@@ -625,12 +625,18 @@ function loop() {
   }
 
   const now = video.currentTime;
+  const createdAt = new Date().toISOString();
   if (now !== lastVideoTime) {
     lastVideoTime = now;
     try {
       const result = poseLandmarker.detectForVideo(video, performance.now());
       drawLandmarks(result.landmarks);
       let recordedFrame = recordLandmarks(result.landmarks);
+      if (recordingInProgress) {
+        recordedFrame.createdAt = createdAt;
+        uploadLandmarks(recordedFrame);
+      }
+
       const inFrame = fullBodyInFrame(result.landmarks);
 
       lastInFrame = inFrame;
