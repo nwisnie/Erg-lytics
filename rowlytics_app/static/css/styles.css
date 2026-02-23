@@ -26,6 +26,8 @@
 
   --color-subtle: #e5e7eb;
   --color-subtle-hover: #d4d4d8;
+  --color-surface-subtle: rgba(15, 23, 42, 0.08);
+  --color-surface-subtle-hover: rgba(15, 23, 42, 0.14);
 
   /* Dark surfaces (detail pages) */
   --color-detail-text: #f8fafc;
@@ -60,6 +62,7 @@
 
   /* Misc commonly reused */
   --btn-hover-shadow: 0 15px 30px rgba(37, 99, 235, 0.35);
+  --header-icon-size: 40px;
 
   /* “Muted” colors used in dark sections */
   --color-muted-dark: #cbd5f5;
@@ -344,13 +347,13 @@ body {
 
 .capture__back {
   color: #1e293b;
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--color-surface-subtle);
   border: var(--border-light-med);
   margin-right: 3.25rem;
 }
 
 .capture__back:hover {
-  background: rgba(15, 23, 42, 0.14);
+  background: var(--color-surface-subtle-hover);
   text-decoration: none;
 }
 
@@ -401,6 +404,9 @@ body {
   background: var(--color-white);
   border-bottom: var(--border-light-soft);
   padding: 1rem clamp(1.5rem, 5vw, 3rem);
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
 .capture__header-inner {
@@ -411,6 +417,12 @@ body {
   flex-wrap: wrap;
 }
 
+.capture__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .capture__branding {
   display: flex;
   align-items: center;
@@ -419,12 +431,12 @@ body {
   flex: 1 1 auto;
 }
 
-.capture .logo-mark__image {
+.capture__branding .logo-mark__image {
   width: clamp(56px, 16vw, 72px);
   margin: 0;
 }
 
-.capture .logo-mark__text {
+.capture__branding .logo-mark__text {
   font-size: clamp(1.4rem, 6vw, 2.25rem);
   letter-spacing: 0.08em;
   white-space: nowrap;
@@ -432,6 +444,25 @@ body {
   text-overflow: ellipsis;
   flex-shrink: 1;
   max-width: 70vw;
+}
+
+.profile-link--header {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+  width: var(--header-icon-size);
+  height: var(--header-icon-size);
+  flex: 0 0 auto;
+  background: var(--color-surface-subtle);
+  border: var(--border-light-med);
+  box-shadow: none;
+}
+
+.profile-link--header:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--color-surface-subtle-hover);
 }
 
 .capture__main {
@@ -601,13 +632,8 @@ body {
     align-items: flex-start;
   }
 
-  .capture .logo-mark__text {
+  .capture__branding .logo-mark__text {
     max-width: 100%;
-  }
-
-  /* keep profile icon from overlapping the back button */
-  .capture__header {
-    padding-right: 5.25rem;
   }
 }
 
