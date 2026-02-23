@@ -26,6 +26,8 @@
 
   --color-subtle: #e5e7eb;
   --color-subtle-hover: #d4d4d8;
+  --color-surface-subtle: rgba(15, 23, 42, 0.08);
+  --color-surface-subtle-hover: rgba(15, 23, 42, 0.14);
 
   /* Dark surfaces (detail pages) */
   --color-detail-text: #f8fafc;
@@ -60,6 +62,7 @@
 
   /* Misc commonly reused */
   --btn-hover-shadow: 0 15px 30px rgba(37, 99, 235, 0.35);
+  --header-icon-size: 40px;
 
   /* “Muted” colors used in dark sections */
   --color-muted-dark: #cbd5f5;
@@ -344,13 +347,13 @@ body {
 
 .capture__back {
   color: #1e293b;
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--color-surface-subtle);
   border: var(--border-light-med);
   margin-right: 3.25rem;
 }
 
 .capture__back:hover {
-  background: rgba(15, 23, 42, 0.14);
+  background: var(--color-surface-subtle-hover);
   text-decoration: none;
 }
 
@@ -448,10 +451,10 @@ body {
   top: auto;
   right: auto;
   z-index: auto;
-  width: 40px;
-  height: 40px;
+  width: var(--header-icon-size);
+  height: var(--header-icon-size);
   flex: 0 0 auto;
-  background: rgba(15, 23, 42, 0.08);
+  background: var(--color-surface-subtle);
   border: var(--border-light-med);
   box-shadow: none;
 }
@@ -459,7 +462,7 @@ body {
 .profile-link--header:hover {
   transform: none;
   box-shadow: none;
-  background: rgba(15, 23, 42, 0.14);
+  background: var(--color-surface-subtle-hover);
 }
 
 .capture__main {
