@@ -1,9 +1,5 @@
 <section class="quadrant">
-  <img
-    src="{{ image | cloudfront_url }}"
-    alt="{{ title }}"
-    loading="lazy"
-  />
+  <img src="{{ url_for('static', filename=image) }}" alt="{{ title }}" />
   <div class="quadrant__copy">
     <h2>{{ title }}</h2>
     <p>{{ description }}</p>

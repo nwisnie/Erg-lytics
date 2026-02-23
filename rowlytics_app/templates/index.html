@@ -15,24 +15,44 @@
 {% include "partials/masthead.html" %}
 
 <main class="quadrants">
+  {# 1) Capture Workout #}
   {% set image = 'images/camera_cool.png' %}
   {% set title = 'Capture Workout' %}
   {% set description = 'Record your workout and get feedback live' %}
   {% set href = url_for('public.template_detail', slug='capture-workout') %}
   {% include "partials/quadrant_card.html" %}
 
+  {# 2) Snapshot Library #}
   {% set image = 'images/snapshot_cool.png' %}
   {% set title = 'Snapshot Library' %}
   {% set description = 'View important moments captured during workouts' %}
   {% set href = url_for('public.template_detail', slug='snapshot-library') %}
   {% include "partials/quadrant_card.html" %}
 
+  {# 3) Workout Summary Library #}
   {% set image = 'images/folder_cool.png' %}
   {% set title = 'Workout Summaries' %}
   {% set description = 'View summaries and analytics from previous workouts' %}
   {% set href = url_for('public.template_detail', slug='workout-summaries') %}
   {% include "partials/quadrant_card.html" %}
 
+  {# 4) Manage Team !PLACEHOLDER! #}
+  {% set image = 'images/team_settings_cool.png' %}
+  {% set title = 'Manage Team' %}
+  {% set description = 'PLACEHOLDER RN' %}
+  {% set href = '#' %}
+  {% set disabled = true %}
+  {% include "partials/quadrant_card.html" %}
+
+  {# 5) Team Statistics Dashboard !PLACEHOLDER! #}
+  {% set image = 'images/stats_cool.png' %}
+  {% set title = 'Team Statistics Dashboard' %}
+  {% set description = 'PLACEHOLDER RN' %}
+  {% set href = '#' %}
+  {% set disabled = true %}
+  {% include "partials/quadrant_card.html" %}
+
+  {# 6) Team Page #}
   {% set image = 'images/team_cool.png' %}
   {% set title = 'Team View' %}
   {% set description = 'Join a team of like minded athletes and track collective progress' %}

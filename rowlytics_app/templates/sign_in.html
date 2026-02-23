@@ -15,8 +15,19 @@
     <h1 class="landing__wordmark">Erg-lytics</h1>
 
     <div class="landing__actions">
-      <a class="btn btn--dark landing__btn" href="{{ login_url }}">Login</a>
-      <a class="btn btn--dark landing__btn" href="{{ login_url }}">Create Account</a>
+      {% if login_url %}
+        <a class="btn btn--dark landing__btn" href="{{ login_url }}">
+          Login
+        </a>
+
+        <a class="btn btn--dark landing__btn" href="{{ login_url }}">
+          Create Account
+        </a>
+      {% else %}
+        <p class="auth__error">
+          Cognito not configured (missing login_url).
+        </p>
+      {% endif %}
     </div>
   </section>
 </main>

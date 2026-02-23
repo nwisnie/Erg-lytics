@@ -14,8 +14,8 @@
   --color-gray: #64748b;
 
   /* Brand */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+  --color-primary: #111827;
+  --color-primary-hover: #000000;
 
   /* Status */
   --color-success: #22c55e;
@@ -151,15 +151,81 @@ body {
   fill: currentColor;
 }
 
-/* Homepage masthead */
-.masthead {
-  min-height: 25vh;
+
+/* ============================= */
+/* App Header (Top Bar)          */
+/* ============================= */
+
+.app-header {
+  width: 100%;
+  background: #eef2f6;              /* light gray bar like Figma */
+  border-bottom: var(--border-light-soft);
+}
+
+.app-header__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  text-decoration: none;             /* remove purple underline */
+  color: var(--color-slate-900);
+}
+
+.app-header__logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  display: block;
+}
+
+.app-header__title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* right-side icon row */
+.app-header__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* square-ish icon buttons like Figma */
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--color-white);
+  border: var(--border-light-soft);
+
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 2rem;
+
+  text-decoration: none;
+}
+
+.icon-btn:hover {
+  background: var(--color-subtle);
+}
+
+.icon-btn__img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
 }
 
 .logo-mark__image {
@@ -179,9 +245,11 @@ body {
 .quadrants {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  padding: 2rem clamp(1rem, 5vw, 4rem);
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 2rem;
+  padding: 3rem clamp(1.5rem, 6vw, 5rem);
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 /* Footer */
@@ -217,7 +285,7 @@ body {
 }
 
 .quadrant img {
-  width: clamp(160px, 32%, 220px);
+  width: clamp(100px, 22%, 150px);
   height: auto;
   border-radius: var(--radius-lg);
   object-fit: contain;
@@ -277,34 +345,17 @@ body {
   }
 }
 
+@media (max-width: 1100px) {
+  .quadrants {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .quadrants {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1rem;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
     padding: 1.25rem 1rem 2rem;
-  }
-
-  .quadrant {
-    padding: 1rem;
-    gap: 0.75rem;
-    align-items: center;
-    text-align: center;
-  }
-
-  .quadrant img {
-    width: min(120px, 90%);
-    height: auto;
-  }
-
-  .quadrant__copy {
-    min-width: 0;
-    width: 100%;
-    align-items: center;
-  }
-
-  .quadrant__copy .btn {
-    width: 100%;
-    max-width: 180px;
   }
 }
 

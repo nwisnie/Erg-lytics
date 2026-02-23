@@ -1,8 +1,40 @@
-<header class="masthead">
-  <img
-    class="logo-mark__image"
-    src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-    alt="Erglytics mark"
-  />
-  <span class="logo-mark__text">Erglytics</span>
+<header class="app-header">
+  <div class="app-header__inner">
+    <a class="app-header__brand" href="{{ url_for('public.landing_page') }}">
+      <img
+        class="app-header__logo"
+        src="{{ url_for('static', filename='images/erg_cool.png') }}"
+        alt="Erg-lytics"
+      />
+      <span class="app-header__title">Erg-lytics</span>
+    </a>
+
+    <nav class="app-header__actions" aria-label="Header actions">
+      <a class="icon-btn" href="#" aria-label="Notifications">
+        <img class="icon-btn__img" src="{{ url_for('static', filename='images/notif_cool.png') }}" alt="" />
+      </a>
+
+      <a class="icon-btn" href="#" aria-label="Back">
+        <img class="icon-btn__img" src="{{ url_for('static', filename='images/back_cool.jpg') }}" alt="" />
+      </a>
+
+      <a class="icon-btn" href="{{ url_for('public.landing_page') }}" aria-label="Home">
+        <img class="icon-btn__img" src="{{ url_for('static', filename='images/home_cool.png') }}" alt="" />
+      </a>
+
+      {% if user_id %}
+        <a class="icon-btn" href="{{ url_for('public.profile') }}" aria-label="Profile">
+          <img class="icon-btn__img" src="{{ url_for('static', filename='images/profile_cool.jpg') }}" alt="" />
+        </a>
+
+        <a class="icon-btn" href="#" aria-label="Settings">
+          <img class="icon-btn__img" src="{{ url_for('static', filename='images/settings_cool.jpg') }}" alt="" />
+        </a>
+      {% else %}
+        <a class="icon-btn" href="{{ url_for('public.signin') }}" aria-label="Sign in">
+          <img class="icon-btn__img" src="{{ url_for('static', filename='images/profile_cool.jpg') }}" alt="" />
+        </a>
+      {% endif %}
+    </nav>
+  </div>
 </header>
