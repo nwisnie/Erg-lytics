@@ -87,7 +87,7 @@ def get_landmarks_table():
 
 
 def get_ddb_tables():
-    return get_users_table(), get_team_members_table(), get_landmarks_table()
+    return get_users_table(), get_team_members_table()
 
 
 def sync_user_profile(user_id: str | None, email: str | None, name: str | None) -> str | None:
