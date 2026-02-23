@@ -1169,3 +1169,58 @@ body {
 .modal-open {
   overflow: hidden;
 }
+
+
+/* ============================= */
+/* Landing page (Startup)        */
+/* ============================= */
+
+.landing {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+
+  padding: 3.5rem 1rem;
+}
+
+.landing__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.25rem;
+  width: 100%;
+  max-width: 900px;
+}
+
+.landing__logo {
+  width: min(520px, 80vw);
+  height: auto;
+  max-height: 260px;
+  object-fit: contain;
+  display: block;
+}
+
+.landing__wordmark {
+  margin: 0;
+  font-size: clamp(3rem, 7vw, 6rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.landing__actions {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing__btn {
+  min-width: 260px;
+  min-height: 84px;
+  font-size: 1.6rem;
+  border-radius: 10px;
+  padding: 1.25rem 2rem;
+
+  align-self: center;
+}

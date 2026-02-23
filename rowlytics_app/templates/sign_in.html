@@ -1,31 +1,23 @@
 {% extends "base.html" %}
 
-{% block title %}Sign In | Erglytics{% endblock %}
-
-{% block body_class %}auth{% endblock %}
+{% block title %}Erglytics{% endblock %}
+{% block body_class %}landing{% endblock %}
 
 {% block content %}
-<main class="auth__panel">
-  <div class="auth__brand">
+<main class="landing">
+  <section class="landing__hero">
     <img
-      class="logo-mark__image"
+      class="landing__logo"
       src="{{ 'images/erg_cool.png' | cloudfront_url }}"
       alt="Erglytics logo"
     />
-    <span class="logo-mark__text">Erglytics</span>
-  </div>
 
-  <h1>Sign in to continue</h1>
-  <p>Erglytics uses AWS Cognito to protect your data.</p>
+    <h1 class="landing__wordmark">Erg-lytics</h1>
 
-  {% if error %}
-    <p class="auth__error">{{ error }}</p>
-  {% endif %}
-
-  {% if login_url %}
-    <a class="btn btn--primary auth__cta" href="{{ login_url }}">Sign in / Sign up</a>
-  {% else %}
-    <p class="auth__error">Cognito is not configured yet.</p>
-  {% endif %}
+    <div class="landing__actions">
+      <a class="btn btn--dark landing__btn" href="{{ login_url }}">Login</a>
+      <a class="btn btn--dark landing__btn" href="{{ login_url }}">Create Account</a>
+    </div>
+  </section>
 </main>
 {% endblock %}
