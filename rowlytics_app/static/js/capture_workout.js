@@ -229,29 +229,37 @@ function recordLandmarks(landmarks) {
     frame.data.push({x, y});
   }
 
-  let angle = Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x) -
-  Math.atan2(lms[23].y - lms[11].y, lms[23].x - lms[11].x);
-  frame.header.push("body_angle");
-  frame.data.push(angle);
-  let knee_hip = Math.atan2(lms[26].y - lms[24].y, lms[26].x - lms[24].x) -
-  Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
-  let knee_ankle = Math.atan2(lms[28].y - lms[26].y, lms[28].x - lms[26].x) -
-  Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x);
+  if(lms[24] && lms[12] && lms[23] && lms[11]) {
+    let angle = Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x) -
+    Math.atan2(lms[23].y - lms[11].y, lms[23].x - lms[11].x);
+    frame.header.push("body_angle");
+    frame.data.push(angle);
+  }
+  if(lms[26] && lms[24] && lms[12] && lms[28]) {
+    let knee_hip = Math.atan2(lms[26].y - lms[24].y, lms[26].x - lms[24].x) -
+    Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
+    let knee_ankle = Math.atan2(lms[28].y - lms[26].y, lms[28].x - lms[26].x) -
+    Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x);
 
-  let hip_ankle = Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x) -
-  Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
-  let knee_angle = Math.acos((knee_hip**2+knee_ankle**2-hip_ankle**2)/(2*knee_hip*knee_ankle));
-  frame.header.push("knee_angle");
-  frame.data.push(knee_angle);
-  let thumb_elbow = Math.atan2(lms[20].y - lms[16].y, lms[20].x - lms[16].x) -
-  Math.atan2(lms[16].y - lms[12].y, lms[16].x - lms[12].x);
-  let index_elbow = Math.atan2(lms[19].y - lms[15].y, lms[19].x - lms[15].x) -
-  Math.atan2(lms[15].y - lms[11].y, lms[15].x - lms[11].x);
-  let wrist_elbow = Math.atan2(lms[18].y - lms[14].y, lms[18].x - lms[14].x) -
-  Math.atan2(lms[14].y - lms[10].y, lms[14].x - lms[10].x);
-  let elbow_angle = Math.acos((thumb_elbow**2+index_elbow**2-wrist_elbow**2)/(2*thumb_elbow*index_elbow));
-  frame.header.push("elbow_angle");
-  frame.data.push(elbow_angle);
+    let hip_ankle = Math.atan2(lms[28].y - lms[12].y, lms[28].x - lms[12].x) -
+    Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
+    let knee_angle = Math.acos((knee_hip**2+knee_ankle**2-hip_ankle**2)/(2*knee_hip*knee_ankle));
+    frame.header.push("knee_angle");
+    frame.data.push(knee_angle);
+  }
+  if(lms[20] && lms[16] && lms[12] && lms[19] && lms[15] && lms[11] && lms[18] && lms[14]
+    && lms[10]) {
+    let thumb_elbow = Math.atan2(lms[20].y - lms[16].y, lms[20].x - lms[16].x) -
+    Math.atan2(lms[16].y - lms[12].y, lms[16].x - lms[12].x);
+    let index_elbow = Math.atan2(lms[19].y - lms[15].y, lms[19].x - lms[15].x) -
+    Math.atan2(lms[15].y - lms[11].y, lms[15].x - lms[11].x);
+    let wrist_elbow = Math.atan2(lms[18].y - lms[14].y, lms[18].x - lms[14].x) -
+    Math.atan2(lms[14].y - lms[10].y, lms[14].x - lms[10].x);
+    let elbow_angle = Math.acos((thumb_elbow**2+index_elbow**2-wrist_elbow**2)/
+    (2*thumb_elbow*index_elbow));
+    frame.header.push("elbow_angle");
+    frame.data.push(elbow_angle);
+  }
 
   return frame;
 
@@ -633,8 +641,8 @@ function loop() {
       drawLandmarks(result.landmarks);
       let recordedFrame = recordLandmarks(result.landmarks);
       if (recordingInProgress) {
-        recordedFrame.createdAt = createdAt;
-        uploadLandmarks(recordedFrame);
+        //recordedFrame.createdAt = createdAt;
+        uploadLandmarks(recordedFrame, createdAt);
       }
 
       const inFrame = fullBodyInFrame(result.landmarks);
