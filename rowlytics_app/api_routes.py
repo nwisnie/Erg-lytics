@@ -798,11 +798,11 @@ def list_workouts_for_current_user():
         logger.error("GET /workouts: failed to load workouts: %s", err, exc_info=True)
         return jsonify({"error": "Unable to load workouts", "detail": str(err)}), 500
 
-    def sort_key(item):
-        return item.get("completedAt") or item.get("createdAt") or ""
-
-    items_sorted = sorted(items, key=sort_key, reverse=True)
-    return jsonify({"userId": user_id, "workouts": items_sorted})
+    return jsonify({
+        "userId": user_id,
+        "workouts": items,
+        "nextCursor": _encode_cursor(next_key),
+    })
 
 
 @api_bp.route("/landmarks", methods=["POST"])
