@@ -26,6 +26,14 @@ TEAM_NAME_INDEX = os.getenv("ROWLYTICS_TEAMS_NAME_INDEX", "TeamNameIndex")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
 WORKOUTS_TABLE_NAME = os.getenv("ROWLYTICS_WORKOUTS_TABLE", "RowlyticsWorkouts")
 LANDMARKS_TABLE_NAME = os.getenv("ROWLYTICS_LANDMARKS_TABLE", "RowlyticsLandmarks")
+RECORDINGS_CREATED_AT_INDEX = os.getenv(
+    "ROWLYTICS_RECORDINGS_CREATED_AT_INDEX",
+    "UserCreatedAtIndex",
+)
+WORKOUTS_COMPLETED_AT_INDEX = os.getenv(
+    "ROWLYTICS_WORKOUTS_COMPLETED_AT_INDEX",
+    "UserCompletedAtIndex",
+)
 
 
 def now_iso() -> str:
@@ -275,6 +283,15 @@ def query_all(table, **kwargs):
     return items
 
 
+def query_page(table, *, limit: int, exclusive_start_key=None, **kwargs):
+    query_kwargs = dict(kwargs)
+    query_kwargs["Limit"] = limit
+    if exclusive_start_key:
+        query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+    response = table.query(**query_kwargs)
+    return response.get("Items", []), response.get("LastEvaluatedKey")
+
+
 def scan_all(table, **kwargs):
     items = []
     last_key = None
@@ -344,17 +361,118 @@ def list_owned_teams(teams_table, user_id: str):
 
 
 def list_recordings(recordings_table, user_id: str):
-    return query_all(
+    try:
+        return query_all(
+            recordings_table,
+            IndexName=RECORDINGS_CREATED_AT_INDEX,
+            KeyConditionExpression=Key("userId").eq(user_id),
+            ScanIndexForward=False,
+        )
+    except Exception as err:
+        logger.warning("list_recordings: index query failed, using fallback query: %s", err)
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+        items = query_all(
+            recordings_table,
+            KeyConditionExpression=Key("userId").eq(user_id),
+        )
+        return sorted(items, key=lambda item: item.get("createdAt") or "", reverse=True)
+
+
+def list_recordings_page(recordings_table, user_id: str, limit: int, exclusive_start_key=None):
+    return query_page(
         recordings_table,
+        IndexName=RECORDINGS_CREATED_AT_INDEX,
         KeyConditionExpression=Key("userId").eq(user_id),
+        ScanIndexForward=False,
+        limit=limit,
+        exclusive_start_key=exclusive_start_key,
     )
 
 
 def list_workouts(workouts_table, user_id: str):
-    return query_all(
+    try:
+        return query_all(
+            workouts_table,
+            IndexName=WORKOUTS_COMPLETED_AT_INDEX,
+            KeyConditionExpression=Key("userId").eq(user_id),
+            ScanIndexForward=False,
+        )
+    except Exception as err:
+        logger.warning("list_workouts: index query failed, using fallback query: %s", err)
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+        items = query_all(
+            workouts_table,
+            KeyConditionExpression=Key("userId").eq(user_id),
+        )
+        return sorted(
+            items,
+            key=lambda item: item.get("completedAt") or item.get("createdAt") or "",
+            reverse=True,
+        )
+
+
+def list_workouts_page(workouts_table, user_id: str, limit: int, exclusive_start_key=None):
+    return query_page(
         workouts_table,
+        IndexName=WORKOUTS_COMPLETED_AT_INDEX,
         KeyConditionExpression=Key("userId").eq(user_id),
+        ScanIndexForward=False,
+        limit=limit,
+        exclusive_start_key=exclusive_start_key,
     )
+
+
+def fetch_team_members_page(
+    users_table,
+    team_members_table,
+    team_id: str,
+    allowed_roles: set[str],
+    limit: int,
+    exclusive_start_key=None,
+):
+    query_kwargs = {
+        "KeyConditionExpression": Key("teamId").eq(team_id),
+        "Limit": limit,
+    }
+    if exclusive_start_key:
+        query_kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+    response = team_members_table.query(
+        **query_kwargs,
+    )
+    items = response.get("Items", [])
+    user_ids = [item.get("userId") for item in items if item.get("userId")]
+    users_by_id = batch_get_users(users_table, user_ids)
+
+    members = []
+    for item in items:
+        user_id = item.get("userId")
+        user = users_by_id.get(user_id, {})
+        raw_role = item.get("memberRole")
+        role = raw_role.lower() if isinstance(raw_role, str) else "rower"
+        if role not in allowed_roles:
+            role = "coach" if "coach" in role else "rower"
+
+        members.append({
+            "userId": user_id,
+            "memberRole": role,
+            "joinedAt": item.get("joinedAt"),
+            "name": user.get("name"),
+            "email": user.get("email"),
+        })
+    return members, response.get("LastEvaluatedKey")
 
 
 def team_name_exists(teams_table, team_name: str) -> bool:

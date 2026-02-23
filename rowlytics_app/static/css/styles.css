@@ -731,6 +731,14 @@ body {
   font-size: 0.85rem;
 }
 
+.team-load-more {
+  justify-self: center;
+}
+
+.team-load-more--hidden {
+  display: none;
+}
+
 .team-message {
   min-height: 1.2rem;
   font-size: 0.9rem;
@@ -889,6 +897,14 @@ body {
 .recordings-empty {
   color: var(--color-muted-dark);
   font-size: 0.9rem;
+}
+
+.recordings-load-more {
+  justify-self: center;
+}
+
+.recordings-load-more--hidden {
+  display: none;
 }
 
 /* Auth */

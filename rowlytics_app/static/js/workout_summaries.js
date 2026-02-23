@@ -1,18 +1,31 @@
 (() => {
+  const PAGE_SIZE = 8;
+
   const grid = document.getElementById("workoutsGrid");
   const message = document.getElementById("workoutsMessage");
+  const loadMoreBtn = document.getElementById("workoutsLoadMore");
   const userId = document.body?.dataset?.userId;
 
-  if (!grid || !message) {
-    console.warn("[workouts] Required elements missing");
-    return;
-  }
+  if (!grid || !message) return;
 
   if (!userId) {
     message.textContent = "No user ID found.";
     message.classList.add("recordings-message--error");
     return;
   }
+
+  const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+  const getApiUrl = (path) => {
+    if (apiBase) return apiBase + path;
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const first = parts[0];
+    const stage = first && ["Prod", "Stage", "Dev"].includes(first) ? `/${first}` : "";
+    return stage + path;
+  };
+
+  let workouts = [];
+  let nextCursor = null;
+  let loading = false;
 
   const setMessage = (text, tone) => {
     message.textContent = text;
@@ -21,14 +34,12 @@
     if (tone === "success") message.classList.add("recordings-message--success");
   };
 
-  const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
-
-  const getApiUrl = (path) => {
-    if (apiBase) return apiBase + path;
-    const parts = window.location.pathname.split("/").filter(Boolean);
-    const first = parts[0];
-    const stage = first && ["Prod", "Stage", "Dev"].includes(first) ? `/${first}` : "";
-    return stage + path;
+  const setLoadMoreState = (cursor, isLoading = false) => {
+    nextCursor = cursor || null;
+    if (!loadMoreBtn) return;
+    loadMoreBtn.classList.toggle("recordings-load-more--hidden", !nextCursor);
+    loadMoreBtn.disabled = isLoading;
+    loadMoreBtn.textContent = isLoading ? "Loading..." : "Load more summaries";
   };
 
   const formatDuration = (seconds) => {
@@ -47,9 +58,9 @@
     grid.appendChild(empty);
   };
 
-  const renderWorkouts = (workouts) => {
+  const renderWorkouts = () => {
     grid.innerHTML = "";
-    if (!workouts || workouts.length === 0) {
+    if (!workouts.length) {
       renderEmpty();
       return;
     }
@@ -87,23 +98,52 @@
     });
   };
 
-  const loadWorkouts = async () => {
-    const apiUrl = getApiUrl("/api/workouts");
-    setMessage("Loading workouts...");
+  const loadWorkouts = async ({ append = false } = {}) => {
+    if (append && (!nextCursor || loading)) return;
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (append && nextCursor) {
+      params.set("cursor", nextCursor);
+    }
+
+    loading = true;
+    setLoadMoreState(nextCursor, true);
+    if (!append) {
+      setMessage("Loading workouts...");
+    }
+
     try {
-      const response = await fetch(apiUrl);
+      const response = await fetch(getApiUrl(`/api/workouts?${params.toString()}`));
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.error || "Unable to load workouts");
       }
-      renderWorkouts(payload.workouts || []);
+
+      workouts = append
+        ? workouts.concat(payload.workouts || [])
+        : (payload.workouts || []);
+      renderWorkouts();
+      setLoadMoreState(payload.nextCursor, false);
       setMessage("");
     } catch (err) {
-      console.error("[workouts] Failed to load workouts", err);
-      renderEmpty();
+      if (!append) {
+        workouts = [];
+        renderEmpty();
+      }
       setMessage(err.message || "Unable to load workouts", "error");
+      setLoadMoreState(nextCursor, false);
+    } finally {
+      loading = false;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = false;
+      }
     }
   };
+
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", async () => {
+      await loadWorkouts({ append: true });
+    });
+  }
 
   loadWorkouts();
 })();
