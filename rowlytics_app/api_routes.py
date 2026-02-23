@@ -823,8 +823,6 @@ def save_landmark():
 
         logger.info("POST /landmarks: user=%s, frame=%s, createdAt=%s", user_id, frame, created_at)
 
-        # Placeholder for saving landmark data to a database or storage
-        # For example, you could save to DynamoDB or S3 here
         table.put_item(
             Item={
                 "userId": user_id,
@@ -833,12 +831,7 @@ def save_landmark():
                 }
         )
 
-        return jsonify({"message": "Landmarks stored"}), 200
+        return jsonify({"status": "ok"}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    return jsonify({
-        "userId": user_id,
-        "workouts": items,
-        "nextCursor": _encode_cursor(next_key),
-    })
