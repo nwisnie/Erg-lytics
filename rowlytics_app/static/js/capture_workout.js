@@ -220,22 +220,23 @@ function recordLandmarks(landmarks) {
     data : []
   };
 
-  for(const lm in lms)  {
-    if(!lm){
-      frame.header.push(lm.name);
-      frame.data.push("N/A");
-      continue;
-    }
-    if (lm.visibility != null && lm.visibility < 0.3) {
-      frame.header.push(lm.name);
+  for(let i = 0; i < lms.length; i++) {
+    const lm = lms[i];
+
+
+    const headerName = `landmark_${i}`;
+    console.log("Recording landmark:", headerName, lm);
+    frame.header.push(headerName);
+
+    if (!lm || (lm.visibility != null && lm.visibility < 0.3)) {
       frame.data.push("N/A");
       continue;
     }
 
-    let x = String(offsetX + lm.x * videoWidth * scale);
-    let y = String(offsetY + lm.y * videoHeight * scale);
-    frame.header.push(lm.name);
-    frame.data.push({x, y});
+    let x = offsetX + lm.x * videoWidth * scale;
+    let y = offsetY + lm.y * videoHeight * scale;
+
+    frame.data.push({ x: String(x), y: String(y) });
 
   }
 
