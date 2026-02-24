@@ -827,7 +827,7 @@ def save_landmark():
             Item={
                 "userId": user_id,
                 "createdAt": created_at,
-                "frame": frame
+                "frame": frame,
                 }
         )
 

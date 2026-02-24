@@ -221,19 +221,33 @@ function recordLandmarks(landmarks) {
   };
 
   for(const lm in lms)  {
-    if(!lm) continue;
-    if (lm.visibility != null && lm.visibility < 0.3) continue;
-    let x = offsetX + lm.x * videoWidth * scale;
-    let y = offsetY + lm.y * videoHeight * scale;
+    if(!lm){
+      frame.header.push(lm.name);
+      frame.data.push("N/A");
+      continue;
+    }
+    if (lm.visibility != null && lm.visibility < 0.3) {
+      frame.header.push(lm.name);
+      frame.data.push("N/A");
+      continue;
+    }
+
+    let x = String(offsetX + lm.x * videoWidth * scale);
+    let y = String(offsetY + lm.y * videoHeight * scale);
     frame.header.push(lm.name);
     frame.data.push({x, y});
+
   }
 
   if(lms[24] && lms[12] && lms[23] && lms[11]) {
     let angle = Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x) -
     Math.atan2(lms[23].y - lms[11].y, lms[23].x - lms[11].x);
     frame.header.push("body_angle");
-    frame.data.push(angle);
+    frame.data.push(String(angle));
+  }
+  else {
+    frame.header.push("body_angle");
+    frame.data.push("N/A");
   }
   if(lms[26] && lms[24] && lms[12] && lms[28]) {
     let knee_hip = Math.atan2(lms[26].y - lms[24].y, lms[26].x - lms[24].x) -
@@ -245,7 +259,11 @@ function recordLandmarks(landmarks) {
     Math.atan2(lms[24].y - lms[12].y, lms[24].x - lms[12].x);
     let knee_angle = Math.acos((knee_hip**2+knee_ankle**2-hip_ankle**2)/(2*knee_hip*knee_ankle));
     frame.header.push("knee_angle");
-    frame.data.push(knee_angle);
+    frame.data.push(String(knee_angle));
+  }
+  else {
+    frame.header.push("knee_angle");
+    frame.data.push("N/A");
   }
   if(lms[20] && lms[16] && lms[12] && lms[19] && lms[15] && lms[11] && lms[18] && lms[14]
     && lms[10]) {
@@ -258,7 +276,11 @@ function recordLandmarks(landmarks) {
     let elbow_angle = Math.acos((thumb_elbow**2+index_elbow**2-wrist_elbow**2)/
     (2*thumb_elbow*index_elbow));
     frame.header.push("elbow_angle");
-    frame.data.push(elbow_angle);
+    frame.data.push(String(elbow_angle));
+  }
+  else {
+    frame.header.push("elbow_angle");
+    frame.data.push("N/A");
   }
 
   return frame;

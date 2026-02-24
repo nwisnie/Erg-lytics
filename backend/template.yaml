@@ -142,18 +142,27 @@ Resources:
   LandMarksTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: RowlyticsLandmarks
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
-        - AttributeName: recordingId
+        - AttributeName: userId
           AttributeType: S
-        - AttributeName: timestamp
-          AttributeType: N
+        - AttributeName: createdAt
+          AttributeType: S
       KeySchema:
-        - AttributeName: recordingId
+        - AttributeName: userId
           KeyType: HASH
-        - AttributeName: timestamp
+        - AttributeName: createdAt
           KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: UserWorkoutCreatedAtIndex
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
 
   UploadBucket:
     Type: AWS::S3::Bucket
@@ -250,6 +259,8 @@ Resources:
           ROWLYTICS_RECORDINGS_CREATED_AT_INDEX: UserCreatedAtIndex
           ROWLYTICS_WORKOUTS_TABLE: !Ref WorkoutsTable
           ROWLYTICS_WORKOUTS_COMPLETED_AT_INDEX: UserCompletedAtIndex
+          ROWLYTICS_LANDMARKS_TABLE: !Ref LandMarksTable
+          ROWLYTICS_LANDMARKS_CREATED_AT_INDEX: UserWorkoutCreatedAtIndex
           ROWLYTICS_MAX_PAGE_SIZE: "50"
           ROWLYTICS_TEAM_MEMBERS_PAGE_SIZE: "20"
           ROWLYTICS_RECORDINGS_PAGE_SIZE: "8"
@@ -273,6 +284,8 @@ Resources:
             TableName: !Ref RecordingsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref WorkoutsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref LandMarksTable
         - S3CrudPolicy:
             BucketName: !Ref UploadBucket
         - Statement:
