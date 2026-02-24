@@ -225,7 +225,7 @@ function recordLandmarks(landmarks) {
 
 
     const headerName = `landmark_${i}`;
-    console.log("Recording landmark:", headerName, lm);
+    //console.log("Recording landmark:", headerName, lm);
     frame.header.push(headerName);
 
     if (!lm || (lm.visibility != null && lm.visibility < 0.3)) {
