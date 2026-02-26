@@ -5,23 +5,86 @@ Description: Rowlytics backend resources (DynamoDB tables + Cognito + S3)
 Parameters:
   CognitoDomainPrefix:
     Type: String
-    Default: rowlytics-auth
-    Description: Unique prefix for the Cognito hosted UI domain.
+    AllowedPattern: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+    ConstraintDescription: "Must be 1-63 chars of lowercase letters, numbers, or hyphens."
+    Description: Globally unique prefix for the Cognito hosted UI domain.
 
   AppBaseUrl:
     Type: String
     Default: https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod
-    Description: Base URL for Cognito redirect and logout URLs.
+    Description: Base URL used for Cognito callback and logout redirects.
 
   SesFromEmail:
     Type: String
     Description: Verified SES sender email (our team email). Must be verified in SES for this region/account.
 
+  UsersTableName:
+    Type: String
+    Default: RowlyticsUsers
+    Description: DynamoDB table name for user profiles.
+
+  TeamsTableName:
+    Type: String
+    Default: RowlyticsTeams
+    Description: DynamoDB table name for teams.
+
+  TeamMembersTableName:
+    Type: String
+    Default: RowlyticsTeamMembers
+    Description: DynamoDB table name for team memberships.
+
+  RecordingsTableName:
+    Type: String
+    Default: RowlyticsRecordings
+    Description: DynamoDB table name for recordings.
+
+  WorkoutsTableName:
+    Type: String
+    Default: RowlyticsWorkouts
+    Description: DynamoDB table name for workouts.
+
+  UploadBucketName:
+    Type: String
+    Default: rowlyticsuploads
+    Description: S3 bucket name for uploaded recordings. Must be globally unique.
+
+  UserPoolName:
+    Type: String
+    Default: RowlyticsUserPool
+    Description: Cognito User Pool display name.
+
+  UserPoolClientName:
+    Type: String
+    Default: RowlyticsUserPoolClient
+    Description: Cognito User Pool client display name.
+
+  ManageSharedResources:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Set to false to reuse existing DynamoDB/S3/Cognito resources instead of creating them in this stack.
+
+  ExistingUserPoolId:
+    Type: String
+    Default: ""
+    Description: Required when ManageSharedResources=false. Existing Cognito User Pool ID to use.
+
+  ExistingUserPoolClientId:
+    Type: String
+    Default: ""
+    Description: Required when ManageSharedResources=false. Existing Cognito User Pool Client ID to use.
+
+Conditions:
+  CreateManagedResources: !Equals [!Ref ManageSharedResources, "true"]
+
 Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
+    Condition: CreateManagedResources
     Properties:
-      TableName: RowlyticsUsers
+      TableName: !Ref UsersTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: userId
@@ -41,8 +104,9 @@ Resources:
 
   TeamsTable:
     Type: AWS::DynamoDB::Table
+    Condition: CreateManagedResources
     Properties:
-      TableName: RowlyticsTeams
+      TableName: !Ref TeamsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: teamId
@@ -62,8 +126,9 @@ Resources:
 
   TeamMembersTable:
     Type: AWS::DynamoDB::Table
+    Condition: CreateManagedResources
     Properties:
-      TableName: RowlyticsTeamMembers
+      TableName: !Ref TeamMembersTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: teamId
@@ -87,8 +152,9 @@ Resources:
 
   RecordingsTable:
     Type: AWS::DynamoDB::Table
+    Condition: CreateManagedResources
     Properties:
-      TableName: RowlyticsRecordings
+      TableName: !Ref RecordingsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: userId
@@ -114,8 +180,9 @@ Resources:
 
   WorkoutsTable:
     Type: AWS::DynamoDB::Table
+    Condition: CreateManagedResources
     Properties:
-      TableName: RowlyticsWorkouts
+      TableName: !Ref WorkoutsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: userId
@@ -141,8 +208,9 @@ Resources:
 
   UploadBucket:
     Type: AWS::S3::Bucket
+    Condition: CreateManagedResources
     Properties:
-      BucketName: rowlyticsuploads
+      BucketName: !Ref UploadBucketName
       CorsConfiguration:
         CorsRules:
           - AllowedMethods:
@@ -157,8 +225,9 @@ Resources:
 
   UserPool:
     Type: AWS::Cognito::UserPool
+    Condition: CreateManagedResources
     Properties:
-      UserPoolName: RowlyticsUserPool
+      UserPoolName: !Ref UserPoolName
       UsernameAttributes:
         - email
       AutoVerifiedAttributes:
@@ -171,8 +240,9 @@ Resources:
 
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
+    Condition: CreateManagedResources
     Properties:
-      ClientName: RowlyticsUserPoolClient
+      ClientName: !Ref UserPoolClientName
       UserPoolId: !Ref UserPool
       GenerateSecret: false
       AllowedOAuthFlows:
@@ -192,6 +262,7 @@ Resources:
 
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
+    Condition: CreateManagedResources
     Properties:
       Domain: !Ref CognitoDomainPrefix
       UserPoolId: !Ref UserPool
@@ -225,46 +296,49 @@ Resources:
         Variables:
           ROWLYTICS_ENV: production
           ROWLYTICS_AUTH_REQUIRED: "true"
-          ROWLYTICS_USERS_TABLE: !Ref UsersTable
-          ROWLYTICS_TEAMS_TABLE: !Ref TeamsTable
-          ROWLYTICS_TEAM_MEMBERS_TABLE: !Ref TeamMembersTable
+          ROWLYTICS_USERS_TABLE: !Ref UsersTableName
+          ROWLYTICS_TEAMS_TABLE: !Ref TeamsTableName
+          ROWLYTICS_TEAM_MEMBERS_TABLE: !Ref TeamMembersTableName
           ROWLYTICS_TEAM_MEMBERS_USER_INDEX: UserIdIndex
           ROWLYTICS_TEAMS_NAME_INDEX: TeamNameIndex
-          ROWLYTICS_RECORDINGS_TABLE: !Ref RecordingsTable
+          ROWLYTICS_RECORDINGS_TABLE: !Ref RecordingsTableName
           ROWLYTICS_RECORDINGS_CREATED_AT_INDEX: UserCreatedAtIndex
-          ROWLYTICS_WORKOUTS_TABLE: !Ref WorkoutsTable
+          ROWLYTICS_WORKOUTS_TABLE: !Ref WorkoutsTableName
           ROWLYTICS_WORKOUTS_COMPLETED_AT_INDEX: UserCompletedAtIndex
           ROWLYTICS_MAX_PAGE_SIZE: "50"
           ROWLYTICS_TEAM_MEMBERS_PAGE_SIZE: "20"
           ROWLYTICS_RECORDINGS_PAGE_SIZE: "8"
           ROWLYTICS_WORKOUTS_PAGE_SIZE: "8"
-          ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucket
+          ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucketName
           ROWLYTICS_COGNITO_DOMAIN: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
-          ROWLYTICS_COGNITO_CLIENT_ID: !Ref UserPoolClient
+          ROWLYTICS_COGNITO_CLIENT_ID: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
           ROWLYTICS_COGNITO_REDIRECT_URI: !Sub "${AppBaseUrl}/auth/callback"
           ROWLYTICS_COGNITO_LOGOUT_REDIRECT_URI: !Sub "${AppBaseUrl}/signin"
-          ROWLYTICS_COGNITO_USER_POOL_ID: !Ref UserPool
+          ROWLYTICS_COGNITO_USER_POOL_ID: !If [CreateManagedResources, !Ref UserPool, !Ref ExistingUserPoolId]
           SES_FROM_EMAIL: !Ref SesFromEmail
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref UsersTable
+            TableName: !Ref UsersTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref TeamsTable
+            TableName: !Ref TeamsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref TeamMembersTable
+            TableName: !Ref TeamMembersTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref RecordingsTable
+            TableName: !Ref RecordingsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref WorkoutsTable
+            TableName: !Ref WorkoutsTableName
         - S3CrudPolicy:
-            BucketName: !Ref UploadBucket
+            BucketName: !Ref UploadBucketName
         - Statement:
             - Effect: Allow
               Action:
                 - cognito-idp:DeleteUser
                 - cognito-idp:AdminDeleteUser
-              Resource: !GetAtt UserPool.Arn
+              Resource: !If
+                - CreateManagedResources
+                - !GetAtt UserPool.Arn
+                - !Sub "arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${ExistingUserPoolId}"
         - Statement:
             - Effect: Allow
               Action:
@@ -306,22 +380,22 @@ Resources:
 
 Outputs:
   UsersTableName:
-    Value: !Ref UsersTable
+    Value: !Ref UsersTableName
   TeamsTableName:
-    Value: !Ref TeamsTable
+    Value: !Ref TeamsTableName
   TeamMembersTableName:
-    Value: !Ref TeamMembersTable
+    Value: !Ref TeamMembersTableName
   RecordingsTableName:
-    Value: !Ref RecordingsTable
+    Value: !Ref RecordingsTableName
   WorkoutsTableName:
-    Value: !Ref WorkoutsTable
+    Value: !Ref WorkoutsTableName
   UploadBucketName:
-    Value: !Ref UploadBucket
+    Value: !Ref UploadBucketName
   UserPoolId:
-    Value: !Ref UserPool
+    Value: !If [CreateManagedResources, !Ref UserPool, !Ref ExistingUserPoolId]
   UserPoolClientId:
-    Value: !Ref UserPoolClient
+    Value: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
   UserPoolDomain:
-    Value: !Ref UserPoolDomain
+    Value: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
   RowlyticsApiUrl:
     Value: !Sub "https://${RowlyticsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
