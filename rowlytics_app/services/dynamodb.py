@@ -25,7 +25,6 @@ TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserId
 TEAM_NAME_INDEX = os.getenv("ROWLYTICS_TEAMS_NAME_INDEX", "TeamNameIndex")
 RECORDINGS_TABLE_NAME = os.getenv("ROWLYTICS_RECORDINGS_TABLE", "RowlyticsRecordings")
 WORKOUTS_TABLE_NAME = os.getenv("ROWLYTICS_WORKOUTS_TABLE", "RowlyticsWorkouts")
-LANDMARKS_TABLE_NAME = os.getenv("ROWLYTICS_LANDMARKS_TABLE", "RowlyticsLandmarks")
 RECORDINGS_CREATED_AT_INDEX = os.getenv(
     "ROWLYTICS_RECORDINGS_CREATED_AT_INDEX",
     "UserCreatedAtIndex",
@@ -76,14 +75,6 @@ def get_workouts_table():
         raise RuntimeError("ROWLYTICS_WORKOUTS_TABLE is not configured")
     logger.debug(f"Accessing workouts table: {WORKOUTS_TABLE_NAME}")
     return _get_resource().Table(WORKOUTS_TABLE_NAME)
-
-
-def get_landmarks_table():
-    if not LANDMARKS_TABLE_NAME:
-        logger.error("ROWLYTICS_LANDMARKS_TABLE environment variable is not configured")
-        raise RuntimeError("ROWLYTICS_LANDMARKS_TABLE is not configured")
-    logger.debug(f"Accessing landmarks table: {LANDMARKS_TABLE_NAME}")
-    return _get_resource().Table(LANDMARKS_TABLE_NAME)
 
 
 def get_ddb_tables():

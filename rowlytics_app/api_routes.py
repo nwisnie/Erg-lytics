@@ -19,7 +19,6 @@ from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     fetch_team_members_page,
     get_ddb_tables,
-    get_landmarks_table,
     get_recordings_table,
     get_team,
     get_team_membership,
@@ -803,35 +802,3 @@ def list_workouts_for_current_user():
         "workouts": items,
         "nextCursor": _encode_cursor(next_key),
     })
-
-
-@api_bp.route("/landmarks", methods=["POST"])
-def save_landmark():
-    table = get_landmarks_table()
-    try:
-        data = request.get_json(silent=True) or {}
-
-        user_id = data.get("userId")
-        frame = data.get("frame")
-        created_at = data.get("createdAt") or now_iso()
-
-        if not user_id:
-            return jsonify({"error": "authentication required"}), 401
-
-        if not created_at:
-            created_at = datetime.utcnow().isoformat()
-
-        logger.info("POST /landmarks: user=%s, frame=%s, createdAt=%s", user_id, frame, created_at)
-
-        table.put_item(
-            Item={
-                "userId": user_id,
-                "createdAt": created_at,
-                "frame": frame,
-                }
-        )
-
-        return jsonify({"status": "ok"}), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
