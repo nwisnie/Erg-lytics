@@ -41,6 +41,7 @@ let recorderStopTimeout = null;
 let recordingCancelled = false;
 let nextAllowedRecordTime = 0;
 let lastInFrame = false;
+let recordedLandmarkFrames = [];
 
 let overlayWidth = 0;
 let overlayHeight = 0;
@@ -205,6 +206,20 @@ function drawLandmarks(landmarks) {
   }
 }
 
+function recordLandmarks(landmarks) {
+  if (!landmarks || landmarks.length === 0) return [];
+  const lms = landmarks[0] || [];
+  return lms.map((lm) => {
+    if (!lm) return null;
+    return {
+      x: lm.x,
+      y: lm.y,
+      z: lm.z,
+      visibility: lm.visibility ?? null
+    };
+  });
+}
+
 async function ensurePoseReady() {
   if (poseReady) return true;
   try {
@@ -346,6 +361,7 @@ async function recordClip() {
 
   const createdAt = new Date().toISOString();
   const chunks = [];
+  recordedLandmarkFrames = [];
 
   recordingInProgress = true;
   recordingCancelled = false;
@@ -486,6 +502,7 @@ function stopCamera() {
   hidePoseStatus();
   lastVideoTime = -1;
   resetRecordingTimers();
+  recordedLandmarkFrames = [];
   if (viewport) {
     viewport.classList.remove("capture__viewport--unmirror");
   }
@@ -556,6 +573,11 @@ function loop() {
     try {
       const result = poseLandmarker.detectForVideo(video, performance.now());
       drawLandmarks(result.landmarks);
+      if (recordingInProgress) {
+        const recordedFrame = recordLandmarks(result.landmarks);
+        recordedLandmarkFrames.push(recordedFrame);
+      }
+
       const inFrame = fullBodyInFrame(result.landmarks);
 
       lastInFrame = inFrame;
@@ -565,6 +587,7 @@ function loop() {
           ? "Full body in frame"
           : defaultStatusText;
       }
+
 
       const frameTime = performance.now();
       if (lastFrameTimestamp !== null) {
