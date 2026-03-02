@@ -41,3 +41,6 @@ Users on a team can either have the rower our coach status: <br>
 - `.pre-commit-config.yaml` mirrors the CI checks locally. Enable it with `pre-commit install` (already done via `make dev-install`).
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request to `main`. A push will fail unless all quality gates are passed.
+
+## Version
+Version Number: 0.5.1
