@@ -65,6 +65,24 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
+      - name: Start app
+        env:
+          ROWLYTICS_AUTH_REQUIRED: "false"
+        run: |
+          python -m flask --app rowlytics_app:create_app run --host 127.0.0.1 --port 5000 > /tmp/rowlytics.log 2>&1 &
+
+      - name: Wait for app health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:5000/signin >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "App failed to start"
+          cat /tmp/rowlytics.log
+          exit 1
+
       - name: Run Playwright a11y tests
         env:
           A11Y_BASE_URL: http://127.0.0.1:5000
