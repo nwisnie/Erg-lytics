@@ -3,36 +3,58 @@
     <a class="app-header__brand" href="{{ url_for('public.landing_page') }}">
       <img
         class="app-header__logo"
-        src="{{ url_for('static', filename='images/erg_cool.png') }}"
+        src="{{ 'images/erg_cool.png' | cloudfront_url }}"
         alt="Erg-lytics"
       />
       <span class="app-header__title">Erg-lytics</span>
     </a>
 
     <nav class="app-header__actions" aria-label="Header actions">
-      <a class="icon-btn" href="#" aria-label="Notifications">
-        <img class="icon-btn__img" src="{{ url_for('static', filename='images/notif_cool.png') }}" alt="" />
-      </a>
+      <button class="icon-btn" type="button" aria-label="Notifications" data-notifications-open>
+        <img class="icon-btn__img" src="{{ 'images/notif_coolV2.png' | cloudfront_url }}" alt="" />
+      </button>
 
-      <a class="icon-btn" href="#" aria-label="Back">
-        <img class="icon-btn__img" src="{{ url_for('static', filename='images/back_cool.jpg') }}" alt="" />
-      </a>
+      <div id="notificationsDropdown" class="notifications-dropdown" aria-hidden="true">
+        <div class="notifications-dropdown__panel" role="dialog" aria-label="Notifications">
+          <div class="notifications-dropdown__header">
+            <h2 class="notifications-dropdown__title">Notifications</h2>
+          </div>
+
+          <ul class="notifications-list">
+            <li class="notifications-list__item">
+              <p class="notifications-list__text">Team notifications coming soon.</p>
+            </li>
+            <li class="notifications-list__item">
+              <p class="notifications-list__text">No new alerts right now.</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <button
+        class="icon-btn"
+        type="button"
+        aria-label="Back"
+        onclick="if (window.history.length > 1) { history.back(); } else { window.location.href='{{ url_for('public.landing_page') }}'; }"
+      >
+        <img class="icon-btn__img" src="{{ 'images/back_cool.png' | cloudfront_url }}" alt="" />
+      </button>
 
       <a class="icon-btn" href="{{ url_for('public.landing_page') }}" aria-label="Home">
-        <img class="icon-btn__img" src="{{ url_for('static', filename='images/home_cool.png') }}" alt="" />
+        <img class="icon-btn__img" src="{{ 'images/home_coolV2.png' | cloudfront_url }}" alt="" />
       </a>
 
       {% if user_id %}
-        <a class="icon-btn" href="{{ url_for('public.profile') }}" aria-label="Profile">
-          <img class="icon-btn__img" src="{{ url_for('static', filename='images/profile_cool.jpg') }}" alt="" />
+        <a class="icon-btn profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
+          <img class="icon-btn__img" src="{{ 'images/profile_cool.png' | cloudfront_url }}" alt="" />
         </a>
 
-        <a class="icon-btn" href="#" aria-label="Settings">
-          <img class="icon-btn__img" src="{{ url_for('static', filename='images/settings_cool.jpg') }}" alt="" />
+        <a class="icon-btn" href="{{ url_for('public.settings') }}" aria-label="Settings">
+          <img class="icon-btn__img" src="{{ 'images/settings_cool.png' | cloudfront_url }}" alt="" />
         </a>
       {% else %}
         <a class="icon-btn" href="{{ url_for('public.signin') }}" aria-label="Sign in">
-          <img class="icon-btn__img" src="{{ url_for('static', filename='images/profile_cool.jpg') }}" alt="" />
+          <img class="icon-btn__img" src="{{ 'images/profile_cool.png' | cloudfront_url }}" alt="" />
         </a>
       {% endif %}
     </nav>
