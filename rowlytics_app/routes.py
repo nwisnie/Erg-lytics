@@ -132,11 +132,6 @@ def settings() -> str:
     return render_template("settings.html", **user_context())
 
 
-@public_bp.route("/account-settings")
-def account_settings() -> str:
-    return render_template("account_settings.html", **user_context())
-
-
 @public_bp.route("/signin")
 def signin() -> str:
     if session.get("user_id"):
