@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import math
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -15,6 +16,7 @@ except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
     ClientError = None
 
 from rowlytics_app.auth.cognito import delete_cognito_user
+from rowlytics_app.cv.alignment import PracticeStrokeAssembler
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     fetch_team_members_page,
@@ -38,6 +40,635 @@ logger = logging.getLogger(__name__)
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 ALLOWED_TEAM_ROLES = {"coach", "rower"}
+MEDIAPIPE_LANDMARK_NAMES = (
+    "nose",
+    "left_eye_inner",
+    "left_eye",
+    "left_eye_outer",
+    "right_eye_inner",
+    "right_eye",
+    "right_eye_outer",
+    "left_ear",
+    "right_ear",
+    "mouth_left",
+    "mouth_right",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_pinky",
+    "right_pinky",
+    "left_index",
+    "right_index",
+    "left_thumb",
+    "right_thumb",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+    "left_heel",
+    "right_heel",
+    "left_foot_index",
+    "right_foot_index",
+)
+ALIGNMENT_ANCHOR_CANDIDATES = (
+    "left_wrist",
+    "right_wrist",
+    "left_elbow",
+    "right_elbow",
+    "nose",
+)
+SIDE_PROFILE_LANDMARKS = {
+    "left": (
+        "left_shoulder",
+        "left_elbow",
+        "left_wrist",
+        "left_hip",
+        "left_knee",
+        "left_ankle",
+    ),
+    "right": (
+        "right_shoulder",
+        "right_elbow",
+        "right_wrist",
+        "right_hip",
+        "right_knee",
+        "right_ankle",
+    ),
+}
+MIN_VISIBILITY_FOR_ANALYSIS = 0.12
+MIN_STROKES_REQUIRED = 3
+MIN_RANGE_OF_MOTION = 0.12
+MIN_STROKE_CYCLE_SEC = 0.35
+MAX_STROKE_CYCLE_SEC = 6.0
+MOTION_TURN_EPSILON = 0.0012
+MIN_STROKE_AMPLITUDE = 0.009
+STROKE_AMPLITUDE_SCALE = 0.14
+ANGLE_MIN_RANGE_OF_MOTION = 0.06
+ANGLE_MIN_STROKE_AMPLITUDE = 0.006
+ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
+MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
+MOTION_SPIKE_BASE_DELTA = 0.075
+
+
+class MovementGateError(ValueError):
+    def __init__(self, message, payload=None):
+        super().__init__(message)
+        self.payload = payload or {}
+
+
+def _coerce_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_coordinate_series(frames, clip_duration_sec):
+    if not isinstance(frames, list) or len(frames) < 2:
+        raise ValueError("frames must contain at least 2 entries")
+
+    frame_count = len(frames)
+    frame_interval = clip_duration_sec / max(frame_count - 1, 1)
+    coordinates = []
+
+    for frame_index, frame in enumerate(frames):
+        if not isinstance(frame, list):
+            continue
+        timestamp = round(frame_index * frame_interval, 6)
+        for landmark_index, landmark_name in enumerate(MEDIAPIPE_LANDMARK_NAMES):
+            if landmark_index >= len(frame):
+                break
+            landmark = frame[landmark_index]
+            if not isinstance(landmark, dict):
+                continue
+            x_val = _coerce_float(landmark.get("x"))
+            y_val = _coerce_float(landmark.get("y"))
+            visibility = _coerce_float(landmark.get("visibility"))
+            if x_val is None or y_val is None:
+                continue
+            if visibility is not None and visibility < MIN_VISIBILITY_FOR_ANALYSIS:
+                continue
+            coordinates.append({
+                "name": landmark_name,
+                "time": timestamp,
+                "x": x_val,
+                "y": y_val,
+            })
+
+    if len(coordinates) < 2:
+        raise ValueError("landmark frames did not contain enough usable coordinates")
+
+    return coordinates
+
+
+def _smooth_coordinates(coordinates, alpha=0.35):
+    grouped = {}
+    for item in coordinates:
+        grouped.setdefault(item["name"], []).append(item)
+
+    smoothed = []
+    for name, items in grouped.items():
+        points = sorted(items, key=lambda item: item["time"])
+        smooth_x = points[0]["x"]
+        smooth_y = points[0]["y"]
+        for point in points:
+            smooth_x = alpha * point["x"] + (1 - alpha) * smooth_x
+            smooth_y = alpha * point["y"] + (1 - alpha) * smooth_y
+            smoothed.append({
+                "name": name,
+                "time": point["time"],
+                "x": smooth_x,
+                "y": smooth_y,
+            })
+
+    return sorted(smoothed, key=lambda item: (item["time"], item["name"]))
+
+
+def _detect_dominant_side(coordinates):
+    counts = {}
+    for side_name, landmark_names in SIDE_PROFILE_LANDMARKS.items():
+        counts[side_name] = sum(1 for item in coordinates if item["name"] in landmark_names)
+    return "left" if counts.get("left", 0) >= counts.get("right", 0) else "right"
+
+
+def _select_anchor_landmark(coordinates, candidates=None):
+    best_name = None
+    best_coords = []
+    best_range = -1.0
+    best_count = -1
+
+    anchor_candidates = candidates or ALIGNMENT_ANCHOR_CANDIDATES
+    for candidate in anchor_candidates:
+        candidate_coords = [item for item in coordinates if item["name"] == candidate]
+        if len(candidate_coords) < 2:
+            continue
+        min_x = min(item["x"] for item in candidate_coords)
+        max_x = max(item["x"] for item in candidate_coords)
+        x_range = max_x - min_x
+        if x_range > best_range or (x_range == best_range and len(candidate_coords) > best_count):
+            best_name = candidate
+            best_coords = candidate_coords
+            best_range = x_range
+            best_count = len(candidate_coords)
+
+    if not best_name:
+        raise ValueError("unable to select an anchor landmark from frames")
+
+    return best_name, sorted(best_coords, key=lambda item: item["time"])
+
+
+def _alignment_score(mean_distance):
+    if mean_distance is None:
+        return None
+    raw_score = 100 - (mean_distance * 140)
+    return round(max(0, min(100, raw_score)), 2)
+
+
+def _landmark_weight(name):
+    if "shoulder" in name or "hip" in name:
+        return 1.15
+    if "elbow" in name or "knee" in name:
+        return 1.0
+    if "wrist" in name:
+        return 0.85
+    if "ankle" in name:
+        return 0.65
+    if name == "nose":
+        return 0.7
+    return 1.0
+
+
+def _summarize_alignment(score):
+    if score is None:
+        return "Not enough matching coordinates to score this clip."
+    if score >= 85:
+        return "Great alignment for this clip."
+    if score >= 65:
+        return "Solid alignment, but there is room to tighten consistency."
+    if score >= 40:
+        return "Moderate drift detected. Focus on repeatable body positions."
+    return "Large drift detected. Recheck posture and frame setup."
+
+
+def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
+    if not shoulder or not elbow or not wrist:
+        return None
+
+    upper_x = shoulder["x"] - elbow["x"]
+    upper_y = shoulder["y"] - elbow["y"]
+    fore_x = wrist["x"] - elbow["x"]
+    fore_y = wrist["y"] - elbow["y"]
+    upper_mag = (upper_x * upper_x + upper_y * upper_y) ** 0.5
+    fore_mag = (fore_x * fore_x + fore_y * fore_y) ** 0.5
+    if upper_mag < 1e-4 or fore_mag < 1e-4:
+        return None
+
+    cosine = ((upper_x * fore_x) + (upper_y * fore_y)) / (upper_mag * fore_mag)
+    cosine = max(-1.0, min(1.0, cosine))
+    angle_rad = math.acos(cosine)
+    return angle_rad / math.pi
+
+
+def _extract_motion_series_candidates(coordinates, dominant_side):
+    wrist_name = f"{dominant_side}_wrist"
+    elbow_name = f"{dominant_side}_elbow"
+    shoulder_name = f"{dominant_side}_shoulder"
+    hip_name = f"{dominant_side}_hip"
+
+    by_time = {}
+    for item in coordinates:
+        by_time.setdefault(item["time"], {})[item["name"]] = item
+
+    translation_series = []
+    angle_series = []
+    for timestamp in sorted(by_time.keys()):
+        frame = by_time[timestamp]
+        shoulder = frame.get(shoulder_name)
+        elbow = frame.get(elbow_name)
+        wrist = frame.get(wrist_name)
+        hip = frame.get(hip_name)
+
+        value = None
+        source = None
+        if shoulder and wrist:
+            value = wrist["x"] - shoulder["x"]
+            source = f"{wrist_name}-{shoulder_name}"
+        elif shoulder and elbow:
+            value = elbow["x"] - shoulder["x"]
+            source = f"{elbow_name}-{shoulder_name}"
+        elif hip and wrist:
+            value = wrist["x"] - hip["x"]
+            source = f"{wrist_name}-{hip_name}"
+        elif hip and elbow:
+            value = elbow["x"] - hip["x"]
+            source = f"{elbow_name}-{hip_name}"
+        elif hip and shoulder:
+            value = shoulder["x"] - hip["x"]
+            source = f"{shoulder_name}-{hip_name}"
+
+        if value is not None:
+            if hip and shoulder:
+                torso_length = (
+                    (shoulder["x"] - hip["x"]) ** 2
+                    + (shoulder["y"] - hip["y"]) ** 2
+                ) ** 0.5
+                if torso_length > 0.04:
+                    value = value / torso_length
+                    source = f"{source}_norm"
+            translation_series.append({
+                "time": timestamp,
+                "value": value,
+                "source": source,
+            })
+
+        angle_value = _compute_elbow_angle_normalized(shoulder, elbow, wrist)
+        if angle_value is not None:
+            angle_series.append({
+                "time": timestamp,
+                "value": angle_value,
+                "source": f"{dominant_side}_elbow_angle_norm",
+            })
+
+    return [
+        {
+            "signalStrategy": "upper_body_translation",
+            "rawSeries": translation_series,
+            "minRangeOfMotion": MIN_RANGE_OF_MOTION,
+            "minStrokeAmplitude": MIN_STROKE_AMPLITUDE,
+            "strokeAmplitudeScale": STROKE_AMPLITUDE_SCALE,
+        },
+        {
+            "signalStrategy": "elbow_angle",
+            "rawSeries": angle_series,
+            "minRangeOfMotion": ANGLE_MIN_RANGE_OF_MOTION,
+            "minStrokeAmplitude": ANGLE_MIN_STROKE_AMPLITUDE,
+            "strokeAmplitudeScale": ANGLE_STROKE_AMPLITUDE_SCALE,
+        },
+    ]
+
+
+def _smooth_motion_series(series, alpha=0.35):
+    if not series:
+        return []
+
+    smoothed = []
+    smooth_value = series[0]["value"]
+    for point in series:
+        smooth_value = alpha * point["value"] + (1 - alpha) * smooth_value
+        smoothed.append({
+            "time": point["time"],
+            "value": smooth_value,
+            "source": point["source"],
+        })
+
+    return smoothed
+
+
+def _despike_motion_series(
+    series,
+    max_delta_per_sec=MOTION_SPIKE_MAX_DELTA_PER_SEC,
+    base_delta=MOTION_SPIKE_BASE_DELTA,
+):
+    if len(series) < 3:
+        return series
+
+    filtered = [series[0]]
+    for point in series[1:]:
+        previous = filtered[-1]
+        delta_t = point["time"] - previous["time"]
+        if delta_t <= 0:
+            continue
+        allowed_delta = max(base_delta, max_delta_per_sec * delta_t)
+        if abs(point["value"] - previous["value"]) > allowed_delta:
+            continue
+        filtered.append(point)
+
+    return filtered if len(filtered) >= 2 else series
+
+
+def _find_turning_points(series, epsilon=MOTION_TURN_EPSILON):
+    if len(series) < 3:
+        return []
+
+    candidates = []
+    for index in range(1, len(series) - 1):
+        prev_delta = series[index]["value"] - series[index - 1]["value"]
+        next_delta = series[index + 1]["value"] - series[index]["value"]
+
+        if prev_delta >= epsilon and next_delta <= -epsilon:
+            point_type = "peak"
+        elif prev_delta <= -epsilon and next_delta >= epsilon:
+            point_type = "trough"
+        else:
+            continue
+
+        candidates.append({
+            "type": point_type,
+            "time": series[index]["time"],
+            "value": series[index]["value"],
+        })
+
+    if not candidates:
+        return []
+
+    collapsed = [candidates[0]]
+    for point in candidates[1:]:
+        last_point = collapsed[-1]
+        if point["type"] == last_point["type"]:
+            replace_peak = point["type"] == "peak" and point["value"] > last_point["value"]
+            replace_trough = point["type"] == "trough" and point["value"] < last_point["value"]
+            if replace_peak or replace_trough:
+                collapsed[-1] = point
+            continue
+        collapsed.append(point)
+
+    return collapsed
+
+
+def _count_strokes(turning_points, min_amplitude, min_cycle_sec, max_cycle_sec):
+    if len(turning_points) < 3:
+        return 0
+
+    stroke_count = 0
+    index = 0
+    while index + 2 < len(turning_points):
+        first = turning_points[index]
+        middle = turning_points[index + 1]
+        third = turning_points[index + 2]
+
+        if first["type"] == third["type"] and first["type"] != middle["type"]:
+            amp_1 = abs(middle["value"] - first["value"])
+            amp_2 = abs(third["value"] - middle["value"])
+            cycle_time = third["time"] - first["time"]
+
+            if (
+                amp_1 >= min_amplitude
+                and amp_2 >= min_amplitude
+                and min_cycle_sec <= cycle_time <= max_cycle_sec
+            ):
+                stroke_count += 1
+                index += 2
+                continue
+
+        index += 1
+
+    return stroke_count
+
+
+def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
+    candidates = _extract_motion_series_candidates(side_coordinates, dominant_side)
+
+    def _evaluate_candidate(candidate):
+        raw_motion_series = candidate.get("rawSeries") or []
+        motion_series = _despike_motion_series(raw_motion_series)
+        signal_drop_count = max(0, len(raw_motion_series) - len(motion_series))
+        if len(motion_series) < 6:
+            return {
+                "signalStrategy": candidate.get("signalStrategy", "n/a"),
+                "movementQualified": False,
+                "movementReason": "Not enough movement points detected for stroke analysis.",
+                "strokeCount": 0,
+                "rangeOfMotion": 0.0,
+                "cadenceSpm": 0.0,
+                "signalPointCount": len(motion_series),
+                "rawSignalPointCount": len(raw_motion_series),
+                "signalDropCount": signal_drop_count,
+                "signalSource": "n/a",
+                "analysisWindowSec": round(float(clip_duration_sec), 2),
+            }
+
+        smoothed_series = _smooth_motion_series(motion_series)
+        values = [point["value"] for point in smoothed_series]
+        range_of_motion = max(values) - min(values)
+        amplitude_threshold = max(
+            candidate.get("minStrokeAmplitude", MIN_STROKE_AMPLITUDE),
+            range_of_motion * candidate.get("strokeAmplitudeScale", STROKE_AMPLITUDE_SCALE),
+        )
+        turning_points = _find_turning_points(smoothed_series)
+        stroke_count = _count_strokes(
+            turning_points,
+            min_amplitude=amplitude_threshold,
+            min_cycle_sec=MIN_STROKE_CYCLE_SEC,
+            max_cycle_sec=MAX_STROKE_CYCLE_SEC,
+        )
+
+        active_duration_sec = smoothed_series[-1]["time"] - smoothed_series[0]["time"]
+        if active_duration_sec <= 0:
+            active_duration_sec = clip_duration_sec
+
+        cadence_spm = 0.0
+        if active_duration_sec > 0:
+            cadence_spm = stroke_count / (active_duration_sec / 60.0)
+
+        min_range = candidate.get("minRangeOfMotion", MIN_RANGE_OF_MOTION)
+        if range_of_motion < min_range:
+            qualified = False
+            reason = (
+                f"Not enough rowing motion. Range {range_of_motion:.3f} "
+                f"is below required {min_range:.3f}."
+            )
+        elif stroke_count < MIN_STROKES_REQUIRED:
+            qualified = False
+            reason = f"Need at least {MIN_STROKES_REQUIRED} strokes to save a clip."
+        else:
+            qualified = True
+            reason = "Movement gate passed."
+
+        return {
+            "signalStrategy": candidate.get("signalStrategy", "n/a"),
+            "movementQualified": qualified,
+            "movementReason": reason,
+            "strokeCount": int(stroke_count),
+            "rangeOfMotion": round(range_of_motion, 6),
+            "cadenceSpm": round(cadence_spm, 2),
+            "signalPointCount": len(smoothed_series),
+            "rawSignalPointCount": len(raw_motion_series),
+            "signalDropCount": signal_drop_count,
+            "signalSource": smoothed_series[0]["source"] if smoothed_series else "n/a",
+            "analysisWindowSec": round(active_duration_sec, 2),
+        }
+
+    evaluated = [_evaluate_candidate(candidate) for candidate in candidates]
+    if not evaluated:
+        return {
+            "signalStrategy": "n/a",
+            "movementQualified": False,
+            "movementReason": "Not enough movement points detected for stroke analysis.",
+            "strokeCount": 0,
+            "rangeOfMotion": 0.0,
+            "cadenceSpm": 0.0,
+            "signalPointCount": 0,
+            "rawSignalPointCount": 0,
+            "signalDropCount": 0,
+            "signalSource": "n/a",
+            "analysisWindowSec": round(float(clip_duration_sec), 2),
+        }
+
+    best = evaluated[0]
+    for candidate in evaluated[1:]:
+        best_qualified = 1 if best["movementQualified"] else 0
+        candidate_qualified = 1 if candidate["movementQualified"] else 0
+        if candidate_qualified > best_qualified:
+            best = candidate
+            continue
+        if candidate["strokeCount"] > best["strokeCount"]:
+            best = candidate
+            continue
+        if (
+            candidate["strokeCount"] == best["strokeCount"]
+            and candidate["rangeOfMotion"] > best["rangeOfMotion"]
+        ):
+            best = candidate
+            continue
+        if (
+            candidate["strokeCount"] == best["strokeCount"]
+            and candidate["rangeOfMotion"] == best["rangeOfMotion"]
+            and candidate["signalPointCount"] > best["signalPointCount"]
+        ):
+            best = candidate
+
+    return best
+
+
+def _analyze_landmark_frames(frames, clip_duration_sec):
+    coordinates = _build_coordinate_series(frames, clip_duration_sec)
+    coordinates = _smooth_coordinates(coordinates)
+    dominant_side = _detect_dominant_side(coordinates)
+    side_landmarks = set(SIDE_PROFILE_LANDMARKS[dominant_side]) | {"nose"}
+    side_coordinates = [item for item in coordinates if item["name"] in side_landmarks]
+    if len(side_coordinates) < 2:
+        raise ValueError("not enough side-profile landmarks found for analysis")
+
+    side_anchor_candidates = (
+        f"{dominant_side}_wrist",
+        f"{dominant_side}_elbow",
+        f"{dominant_side}_shoulder",
+        "nose",
+    )
+    anchor_name, anchor_coords = _select_anchor_landmark(
+        side_coordinates,
+        candidates=side_anchor_candidates,
+    )
+    movement_metrics = _evaluate_movement_gate(
+        side_coordinates,
+        dominant_side,
+        clip_duration_sec,
+    )
+    if not movement_metrics["movementQualified"]:
+        raise MovementGateError(
+            movement_metrics["movementReason"],
+            payload={
+                "dominantSide": dominant_side,
+                "frameCount": len(frames),
+                "coordinateCount": len(side_coordinates),
+                **movement_metrics,
+            },
+        )
+
+    assembler = PracticeStrokeAssembler()
+    progression_interval = 0.1
+
+    anchor_progression = assembler.assemble_progression_steps(anchor_coords, progression_interval)
+
+    ideal_model = []
+    unique_names = sorted({item["name"] for item in side_coordinates})
+    for landmark_name in unique_names:
+        landmark_coords = [item for item in side_coordinates if item["name"] == landmark_name]
+        if len(landmark_coords) < 3:
+            continue
+        landmark_coords = sorted(landmark_coords, key=lambda item: item["time"])
+        steps = assembler.assemble_progression_steps(
+            landmark_coords,
+            progression_interval,
+        )
+        ideal_model.extend(steps)
+
+    if not ideal_model:
+        raise ValueError("unable to build an ideal alignment model from clip data")
+
+    latest_time = max(item["time"] for item in side_coordinates)
+    latest_coords = [item for item in side_coordinates if item["time"] == latest_time]
+    current_progression = assembler.match_progression_interval(anchor_progression, latest_coords)
+    ideal_coordinate_set = assembler.get_ideal_coordinate_set(current_progression, ideal_model)
+
+    latest_by_name = {item["name"]: item for item in latest_coords}
+    weighted_total = 0.0
+    weight_sum = 0.0
+    distances = []
+    for ideal_coord in ideal_coordinate_set:
+        current_coord = latest_by_name.get(ideal_coord["name"])
+        if not current_coord:
+            continue
+        dx = current_coord["x"] - ideal_coord["x"]
+        dy = current_coord["y"] - ideal_coord["y"]
+        raw_distance = (dx * dx + dy * dy) ** 0.5
+        clamped_distance = min(raw_distance, 0.18)
+        weight = _landmark_weight(ideal_coord["name"])
+        weighted_total += clamped_distance * weight
+        weight_sum += weight
+        distances.append(clamped_distance)
+
+    mean_distance = (weighted_total / weight_sum) if weight_sum else None
+    score = _alignment_score(mean_distance)
+
+    return {
+        "anchorLandmark": anchor_name,
+        "dominantSide": dominant_side,
+        "landmarksUsed": sorted(side_landmarks),
+        "frameCount": len(frames),
+        "coordinateCount": len(side_coordinates),
+        **movement_metrics,
+        "progressionStep": current_progression.get("progression_step"),
+        "meanDistance": round(mean_distance, 6) if mean_distance is not None else None,
+        "score": score,
+        "summary": _summarize_alignment(score),
+        "matchedPoints": len(distances),
+    }
 
 
 def _env_int(name: str, default: int) -> int:
@@ -801,4 +1432,46 @@ def list_workouts_for_current_user():
         "userId": user_id,
         "workouts": items,
         "nextCursor": _encode_cursor(next_key),
+    })
+
+
+@api_bp.route("/workouts/alignment-preview", methods=["POST"])
+def preview_workout_alignment():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    frames = data.get("frames")
+    clip_duration_sec = _coerce_float(data.get("clipDurationSec"))
+    clip_count = _coerce_float(data.get("clipCount"))
+    if clip_duration_sec is None or clip_duration_sec <= 0:
+        clip_duration_sec = 5.0
+    if clip_count is not None and clip_count > 0:
+        clip_count = int(round(clip_count))
+    else:
+        clip_count = None
+
+    try:
+        result = _analyze_landmark_frames(frames, clip_duration_sec)
+    except MovementGateError as err:
+        payload = err.payload.copy()
+        if clip_count is not None:
+            payload["clipCount"] = clip_count
+        return jsonify({
+            "status": "rejected",
+            "error": str(err),
+            **payload,
+        }), 422
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+    except Exception as err:  # pragma: no cover - defensive safety
+        logger.error("POST /workouts/alignment-preview failed: %s", err, exc_info=True)
+        return jsonify({"error": "Unable to analyze workout frames"}), 500
+
+    return jsonify({
+        "status": "ok",
+        "userId": user_id,
+        "clipCount": clip_count,
+        **result,
     })
