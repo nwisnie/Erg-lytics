@@ -15,7 +15,11 @@ Parameters:
 
   SesFromEmail:
     Type: String
-    Description: Verified SES sender email (our team email). Must be verified in SES for this region/account.
+    Description: Any email from our domain @erglytics.com.
+
+  SesTestTo:
+    Type: String
+    Description: Email address to receive test emails from, has to be verified on console. Use for now erglytics@gmail.com.
 
 Resources:
   UsersTable:
@@ -245,6 +249,7 @@ Resources:
           ROWLYTICS_COGNITO_LOGOUT_REDIRECT_URI: !Sub "${AppBaseUrl}/signin"
           ROWLYTICS_COGNITO_USER_POOL_ID: !Ref UserPool
           SES_FROM_EMAIL: !Ref SesFromEmail
+          SES_TEST_TO: !Ref SesTestTo
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
