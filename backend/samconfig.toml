@@ -1,13 +1,13 @@
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "erglytics-dev"
+stack_name = "erglytics-version-0-5-1"
 resolve_s3 = true
-s3_prefix = "erglytics-dev"
+s3_prefix = "erglytics-version-0-5-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
-parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth\" AppBaseUrl=\"https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod\" SesFromEmail=\"updates@erglytics.com\" SesTestTo=\"erglytics@gmail.com\""
+parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth\" AppBaseUrl=\"https://ra7jdv1jj1.execute-api.us-east-2.amazonaws.com/Prod\" SesFromEmail=\"updates@erglytics.com\" SesTestTo=\"erglytics@gmail.com\" UsersTableName=\"RowlyticsUsers\" TeamsTableName=\"RowlyticsTeams\" TeamMembersTableName=\"RowlyticsTeamMembers\" RecordingsTableName=\"RowlyticsRecordings\" WorkoutsTableName=\"RowlyticsWorkouts\" UploadBucketName=\"rowlyticsuploads\" UserPoolName=\"RowlyticsUserPool\" UserPoolClientName=\"RowlyticsUserPoolClient\" ManageSharedResources=\"false\" ExistingUserPoolId=\"us-east-2_miFqBsgsA\" ExistingUserPoolClientId=\"6na8lcnrau96407c76atn8641b\""
 
 [default.global.parameters]
 region = "us-east-2"

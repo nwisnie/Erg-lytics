@@ -43,29 +43,61 @@ TEMPLATE_CARDS: tuple[TemplateCard, ...] = (
         slug="capture-workout",
         title="Capture Workout",
         blurb="Record your workout and get feedback live.",
-        image_path="images/camera_cool.png",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/camera_cool.png"
+        ),
         template_name="capture_workout.html",
     ),
     TemplateCard(
         slug="snapshot-library",
         title="Snapshot Library",
         blurb="View important moments captured during workouts.",
-        image_path="images/snapshot_cool.png",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/snapshot_cool.png"
+            ),
         template_name="snapshot_library.html",
     ),
     TemplateCard(
         slug="workout-summaries",
         title="Workout Summaries",
         blurb="View summaries and analytics from previous workouts.",
-        image_path="images/folder_cool.png",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/folder_cool.png"
+            ),
         template_name="workout_summaries.html",
     ),
     TemplateCard(
         slug="team-view",
         title="Team View",
         blurb="Join a team of like minded athletes and track collective progress.",
-        image_path="images/team_cool.png",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/team_cool.png"
+            ),
         template_name="team_view.html",
+    ),
+    TemplateCard(
+        slug="manage-team",
+        title="Manage Team",
+        blurb="Currently a placeholder.",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/team_settings_cool.png"
+            ),
+        template_name="manage_team.html",
+    ),
+    TemplateCard(
+        slug="team-stats",
+        title="Team Stats",
+        blurb="Currently a placeholder.",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/stats_cool.png"
+            ),
+        template_name="team_stats.html",
     ),
 )
 
@@ -80,7 +112,7 @@ def _get_card(slug: str) -> TemplateCard | None:
 
 @public_bp.route("/")
 def landing_page() -> str:
-    return render_template("index.html", **user_context())
+    return render_template("index.html", cards=TEMPLATE_CARDS, **user_context())
 
 
 @public_bp.route("/templates/<slug>")
@@ -96,9 +128,9 @@ def profile() -> str:
     return render_template("profile.html", **user_context())
 
 
-@public_bp.route("/account-settings")
-def account_settings() -> str:
-    return render_template("account_settings.html", **user_context())
+@public_bp.route("/settings")
+def settings() -> str:
+    return render_template("settings.html", **user_context())
 
 
 @public_bp.route("/signin")

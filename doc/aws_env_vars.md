@@ -61,17 +61,20 @@ This document lists the AWS-related environment variables used by Rowlytics, the
   - Used by: `rowlytics_app/auth/cognito.py`
   - Note: Required for admin delete operations.
 
-## Email Configuration
+## SES
 
 - `SES_FROM_EMAIL`
-  - Default: empty string
-  - Used by: rowlytics_app/services/ses_email.py
-  - Note: Verified sender email address used for AWS SES email delivery.
+  - Default: `default@erglytics.com`
+  - Used by: `rowlytics_app/services/ses_email.py`
+
+- `AWS_REGION`
+  - Default: `us-east-2`
+  - Used by: multiple AWS service clients
 
 - `SES_TEST_TO`
-  - Default: empty string
-  - Used by: rowlytics_app/routes.py
-  - Note: Verified recipient email address used by the `/test-email` development endpoint to verify SES email sending.
+  - Default: `erglytics@gmail.com`
+  - Used by: `rowlytics_app/routes.py`
+  - Note: Recipient email address used by the `/test-email` development endpoint to verify SES email sending.
 
 ## Misc
 

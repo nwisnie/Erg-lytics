@@ -4,6 +4,10 @@
 
 {% block body_class %}detail profile{% endblock %}
 
+{% block header %}
+  {% include "partials/masthead.html" %}
+{% endblock %}
+
 {% block content %}
 <main class="page page-pad">
   <div class="container container--wide stack">
@@ -29,7 +33,7 @@
       </div>
 
       <div class="profile-actions">
-        <a class="btn" href="{{ url_for('public.account_settings') }}">Account Settings</a>
+        <a class="btn" href="{{ url_for('public.settings') }}">Account Settings</a>
         <a class="btn btn--dark" href="{{ url_for('public.logout') }}">Sign out</a>
       </div>
     </div>
