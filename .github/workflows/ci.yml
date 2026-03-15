@@ -130,7 +130,7 @@ jobs:
         run: aws sts get-caller-identity
 
       - name: Build SAM app
-        run: sam build --template-file backend/samconfig.toml
+        run: sam build --template-file backend/template.yaml
 
       - name: Deploy SAM app
         run: |
