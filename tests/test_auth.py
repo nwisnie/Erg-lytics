@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -153,3 +154,40 @@ def test_user_context_reads_from_flask_session(monkeypatch: pytest.MonkeyPatch) 
         "user_email": "u@example.com",
         "user_name": "User",
     }
+
+
+def test_token_expired(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Create a token with exp in the past
+    expired_exp = int((datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp())
+    token = {"exp": expired_exp}
+
+    # Mock datetime to return now
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(timezone.utc)
+
+    monkeypatch.setattr("rowlytics_app.auth.cognito.decode_token_payload", FakeDatetime)
+
+    # Assume validate_token raises TokenExpiredError if expired
+    with pytest.raises(cognito.TokenExpiredError):
+        cognito.validate_token(token)
+
+
+def test_user_invalid_login(monkeypatch : pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cognito, "get_user_by_email", lambda email:
+                        {"email": "user@example.com", "password": "hashed"})
+    monkeypatch.setattr(cognito, "verify_password", lambda pw, hashed: False)
+    result = cognito.login("user@example.com", "wrongpassword")
+    assert result is None
+
+
+def test_login_nonexistent_user(monkeypatch : pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cognito, "get_user_by_email", lambda email: None)
+    result = cognito.login("notfound@example.com", "any")
+    assert result is None
+
+
+def test_login_fails_with_missing_fields() -> None:
+    result = cognito.login("", "")
+    assert result is None

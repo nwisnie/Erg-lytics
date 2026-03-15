@@ -5,10 +5,13 @@ from __future__ import annotations
 import base64
 import json
 import os
+from datetime import datetime, timezone
 from urllib import parse
 from urllib import request as urlrequest
 
 from flask import current_app
+
+from rowlytics_app.services.dynamodb import get_users_table
 
 try:
     import boto3
@@ -93,3 +96,31 @@ def delete_cognito_user(user_id: str, email: str | None, access_token: str | Non
         last_error = err
 
     raise RuntimeError(str(last_error) if last_error else "Unable to delete Cognito user")
+
+
+def get_user_by_email(email: str):
+    table = get_users_table()
+    user = table.get_item(Key={"email": email}).get("Item")
+    return user
+
+
+class TokenExpiredError(Exception):
+    pass
+
+
+def get_current_user(token: str, jwt_decoder):
+    try:
+        payload = jwt_decoder(token)
+        return payload["sub"]
+    except TokenExpiredError:
+        raise
+
+
+def validate_token(token):
+    exp = token["exp"]
+    now = datetime.now(timezone.utc).timestamp()
+
+    if now >= exp:
+        raise TokenExpiredError("token expired")
+
+    return True
