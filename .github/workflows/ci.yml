@@ -133,14 +133,14 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Build SAM app
-        run: sam build --template-file backend/samconfig.toml
+        run: sam build --template-file backend/template.yaml
 
       - name: Deploy SAM app
         run: |
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
-            --stack-name "${{ inputs.stack_name }}" \
-            --region "${{ inputs.aws_region }}" \
+            --stack-name "${{ env.stack_name }}" \
+            --region "${{ env.aws_region }}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3
 
@@ -149,9 +149,9 @@ jobs:
         run: |
           cat > last-stack.json <<EOF
           {
-            "stackName": ${{ env.stack_name }},
+            "stackName": "${{ env.stack_name }}"",
             "region": "${{ env.aws_region }}",
-            "run_id": ${{github.run_id}},
+            "run_id": "${{github.run_id}}",
             "deployed_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           }
           EOF
