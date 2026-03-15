@@ -34,6 +34,38 @@ Users on a team can either have the rower our coach status: <br>
    ./scripts/dev_server.sh
    ```
 
+## Backend Deployment (AWS SAM)
+
+Rowlytics uses **AWS SAM** to deploy the backend infrastructure (Lambda, API Gateyway, DynamoDB, and S3).
+
+From the 'backend/' directory:
+
+ ```bash
+sam build
+sam deploy
+```
+
+The deployment configuration is stored in 'samconfig.toml'.
+
+Do *not deploy with ManageSharedResources as true*, unless you intend to create/rewrite the resources. It should be *false* on default.
+
+Be sure to *change the stack name to the correct stack* for your task (erglytics-dev, erglytics-version-..., erglytics-ui-test, etc.) to not overwrite incorrect stacks.
+
+### Important: Table Names
+
+The dev stack uses the **Recovery DynamoDB tables and bucket**. These resources already exist in AWS and must be used when deploying.
+
+| Parameter | Resource |
+|-----------|----------|
+| UsersTableName | RowlyticsUsersRecovery |
+| TeamsTableName | RowlyticsTeamsRecovery |
+| TeamMembersTableName | RowlyticsTeamMembersRecovery |
+| RecordingsTableName | RowlyticsRecordingsRecovery |
+| WorkoutsTableName | RowlyticsWorkoutsRecovery |
+| UploadBucketName | rowlyticsupload-recovery-793523315638 |
+
+These values *should* already be configred in 'samconfig.toml'.
+
 ## Quality gates
 - `make lint` runs flake8 and isort.
 - `make test` runs pytest.
