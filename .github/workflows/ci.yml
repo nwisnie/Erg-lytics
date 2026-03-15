@@ -110,7 +110,7 @@ jobs:
       - name: Deploy stack
         run: |
           aws cloudformation deploy \
-            --template-file samconfig.toml \
+            --template-file backend/samconfig.toml \
             --stack-name "${{inputs.stack_name }}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --region us-east-2
