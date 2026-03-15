@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   lint-and-test:
@@ -95,3 +96,38 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::793523315638:role/GitHub_Actions
+          aws-region: us-east-2
+
+      - name: Deploy stack
+        run: |
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name "${{inputs.stack_name }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region us-east-2
+
+      - name: Test AWS auth
+        run: aws sts get-caller-identity
+
+      - name: Save deployment metadata
+        run: |
+          cat > last-stack.json <<EOF
+          {
+            "stackName": ${{ inputs.stack_name }},
+            "region": "${{ inputs.aws_region }}",
+            "run_id": ${{github.run_id}},
+            "deployed_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          }
+          EOF
+
+          aws ssm put-parameter \
+            --name "/Rowlytics/last-deployed-stack" \
+            --type String \
+            --value "$(cat last-stack.json)" \
+            --overwrite \
+            --region us-east-2
