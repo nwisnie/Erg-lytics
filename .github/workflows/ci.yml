@@ -154,7 +154,7 @@ jobs:
             --stack-name "${{ env.stack_name }}" \
             --region "${{ env.aws_region }}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --resolve-s3
+            --resolve-s3 \
             --no-fail-on-empty-changeset
 
 
