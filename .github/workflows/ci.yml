@@ -129,6 +129,9 @@ jobs:
       - name: Test AWS auth
         run: aws sts get-caller-identity
 
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
       - name: Build SAM app
         run: sam build --template-file backend/template.yaml
 
