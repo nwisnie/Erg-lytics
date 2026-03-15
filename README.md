@@ -51,6 +51,10 @@ Do *not deploy with ManageSharedResources as true*, unless you intend to create/
 
 Be sure to *change the stack name to the correct stack* for your task (erglytics-dev, erglytics-version-..., erglytics-ui-test, etc.) to not overwrite incorrect stacks.
 
+### Connecting Cognito Page to New Stack
+
+When creating a new stack, ensure that after initial deployment, and updating the base api url, that url is added to the *Cognito Allowed Sign Out URLs and Allowed Callback URLs*. This is found in Cognito Console, by selecting the UserPool, going to App clients, selecting the app client, and navigating to the *Login pages* section. Just follow the same format and add the new base url to both sections by editing.
+
 ### Important: Table Names
 
 The dev stack uses the **Recovery DynamoDB tables and bucket**. These resources already exist in AWS and must be used when deploying.
