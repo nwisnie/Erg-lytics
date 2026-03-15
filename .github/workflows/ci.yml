@@ -103,16 +103,18 @@ jobs:
           role-to-assume: arn:aws:iam::793523315638:role/GitHub_Actions
           aws-region: us-east-2
 
+
+      - name: Test AWS auth
+        run: aws sts get-caller-identity
+
       - name: Deploy stack
         run: |
           aws cloudformation deploy \
-            --template-file template.yaml \
+            --template-file samconfig.toml \
             --stack-name "${{inputs.stack_name }}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --region us-east-2
 
-      - name: Test AWS auth
-        run: aws sts get-caller-identity
 
       - name: Save deployment metadata
         run: |
@@ -126,7 +128,7 @@ jobs:
           EOF
 
           aws ssm put-parameter \
-            --name "/Rowlytics/last-deployed-stack" \
+            --name "/Erg-lytics/last-deployed-stack" \
             --type String \
             --value "$(cat last-stack.json)" \
             --overwrite \
