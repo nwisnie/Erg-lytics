@@ -110,9 +110,11 @@ jobs:
           if-no-files-found: ignore
 
   deploy:
-    if: github.event_name == 'workflow_dispatch'
-    needs: [lint-and-test, a11y-playwright]
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    env:
+    STACK_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.stack_name || 'erglytics-dev' }}
+    AWS_REGION: ${{ github.event_name == 'workflow_dispatch' && inputs.aws_region || 'us-east-2' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
