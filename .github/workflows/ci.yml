@@ -133,7 +133,7 @@ jobs:
         uses: aws-actions/setup-sam@v2
 
       - name: Build SAM app
-        run: sam build --template-file backend/template.yaml
+        run: sam build --template-file backend/samconfig.toml
 
       - name: Deploy SAM app
         run: |
