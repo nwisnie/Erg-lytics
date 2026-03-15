@@ -129,13 +129,17 @@ jobs:
       - name: Test AWS auth
         run: aws sts get-caller-identity
 
-      - name: Deploy stack
+      - name: Build SAM app
+        run: sam build --template-file backend/samconfig.toml
+
+      - name: Deploy SAM app
         run: |
-          aws cloudformation deploy \
-            --template-file backend/template.yaml \
-            --stack-name "${{ env.stack_name }}" \
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "${{ inputs.stack_name }}" \
+            --region "${{ inputs.aws_region }}" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --region us-east-2
+            --resolve-s3
 
 
       - name: Save deployment metadata
