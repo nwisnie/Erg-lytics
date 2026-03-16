@@ -14,9 +14,10 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_dynamodb.py` | `pytest` | 36 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and stage prefix header injection |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
+| `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior and SES test-email handling |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 84 tests
+Current automated inventory total: 87 tests
 
 ## Pytest Inventory
 
@@ -135,6 +136,17 @@ These cover API Gateway stage-prefix header behavior and the Lambda-to-Flask ada
 
 These validate S3 client creation prerequisites and the normal boto3 client path.
 
+### `tests/test_email_routes.py` (3 tests)
+
+- `test_test_email_route_returns_message_when_env_missing`
+  Confirms the `/test-email` endpoint returns an informative message when `SES_TEST_TO` is not configured.
+
+- `test_test_email_route_sends_mock_email_when_env_present`
+  Uses a mocked email sender to verify the route attempts to send an email when `SES_TEST_TO` is configured.
+
+- `test_test_email_route_returns_failure_message_when_send_fails`
+  Verifies the route correctly reports an error when the mocked email send operation raises an exception.
+
 ## Playwright Accessibility Inventory
 
 ### `playwright/tests/a11y.spec.js` (2 tests)
@@ -148,10 +160,7 @@ This suite uses `@axe-core/playwright` and filters for `serious` and `critical` 
 
 These files are test-related, but they are not part of the automated inventory above:
 
-- `tests/send_test_email.py`
-  Manual SES smoke-test helper script. It sends a test email to `SES_TEST_TO`.
-- `tests/test_documentation/README.txt`
-- `tests/test_documentation/aidan_2_8_26_body_detection.txt`
+`tests/test_documentation/aidan_2_8_26_body_detection.txt`
 - `tests/test_documentation/example.txt`
 - `tests/test_documentation/verification_test_identity`
 

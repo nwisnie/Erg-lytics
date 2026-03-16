@@ -24,6 +24,7 @@ from rowlytics_app.auth.cognito import (
 )
 from rowlytics_app.auth.sessions import user_context
 from rowlytics_app.services.dynamodb import sync_user_profile
+from rowlytics_app.services.mock_email import send_mock_auto_email
 
 public_bp = Blueprint("public", __name__)
 
@@ -201,3 +202,19 @@ def logout() -> str:
 def favicon_redirect():
     """Redirect /favicon.ico to /static/favicon.ico to handle browser requests."""
     return redirect(url_for("static", filename="favicon.ico"), code=301)
+
+
+@public_bp.route("/test-email")
+def test_email():
+    import os
+
+    test_to = os.getenv("SES_TEST_TO")
+
+    if not test_to:
+        return "SES_TEST_TO is not configured"
+
+    try:
+        send_mock_auto_email(to_email=test_to, name="Beautiful Erglytics Devs")
+        return f"Test email sent to {test_to}"
+    except Exception as exc:
+        return f"Failed to send email: {exc}"
