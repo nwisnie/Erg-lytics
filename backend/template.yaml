@@ -11,7 +11,7 @@ Parameters:
 
   AppBaseUrl:
     Type: String
-    Default: https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod
+    Default: https://xft207g10i.execute-api.us-east-2.amazonaws.com/Prod
     Description: Base URL used for Cognito callback and logout redirects.
 
   SesFromEmail:

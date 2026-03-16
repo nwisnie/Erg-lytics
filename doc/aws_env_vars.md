@@ -41,11 +41,11 @@ This document lists the AWS-related environment variables used by Rowlytics, the
 ## Cognito
 
 - `ROWLYTICS_COGNITO_DOMAIN`
-  - Default: `https://rowlytics-auth.auth.us-east-2.amazoncognito.com`
+  - Default: `https://rowlytics-auth-recovery-20260314.auth.us-east-2.amazoncognito.com`
   - Used by: `rowlytics_app/__init__.py`, `rowlytics_app/auth/cognito.py`
 
 - `ROWLYTICS_COGNITO_CLIENT_ID`
-  - Default: `6na8lcnrau96407c76atn8641b`
+  - Default: `2lu6fopujo3usd6qdt47nt3b20`
   - Used by: `rowlytics_app/__init__.py`, `rowlytics_app/auth/cognito.py`
 
 - `ROWLYTICS_COGNITO_REDIRECT_URI`
