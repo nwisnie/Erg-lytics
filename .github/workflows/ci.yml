@@ -5,9 +5,22 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      stack_name:
+        description: CloudFormation stack name
+        required: true
+        type: string
+      aws_region:
+        description: AWS region
+        required: true
+        default: us-east-2
+        type: string
+
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   lint-and-test:
@@ -46,7 +59,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install Python dependencies
         run: |
@@ -95,3 +108,70 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      stack_name: ${{ github.event_name == 'workflow_dispatch' && inputs.stack_name || 'erglytics-dev' }}
+      aws_region: ${{ github.event_name == 'workflow_dispatch' && inputs.aws_region || 'us-east-2' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Verify Python
+        run: |
+          which python
+          python --version
+          which python3.11 || true
+          python3.11 --version || true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::793523315638:role/GitHub_Actions
+          aws-region: us-east-2
+
+
+      - name: Test AWS auth
+        run: aws sts get-caller-identity
+
+      - name: Set up AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Build SAM app
+        run: sam build --template-file backend/template.yaml
+
+      - name: Deploy SAM app
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "${{ env.stack_name }}" \
+            --region "${{ env.aws_region }}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --resolve-s3 \
+            --no-fail-on-empty-changeset
+
+
+      - name: Save deployment metadata
+        run: |
+          cat > last-stack.json <<EOF
+          {
+            "stackName": "${{ env.stack_name }}"",
+            "region": "${{ env.aws_region }}",
+            "run_id": "${{github.run_id}}",
+            "deployed_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          }
+          EOF
+
+          aws ssm put-parameter \
+            --name "/Erg-lytics/last-deployed-stack" \
+            --type String \
+            --value "$(cat last-stack.json)" \
+            --overwrite \
+            --region us-east-2
