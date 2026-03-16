@@ -16,9 +16,10 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior and SES test-email handling |
 | `tests/test_mock_email.py` | `pytest` | 4 | Mock SES email composition, default-name fallback, content generation, and send-error propagation |
+| `tests/test_email_integration.py` | `pytest` | 1 | Integration of `/test-email` route, mock email generation, template rendering, and SES send pipeline |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 91 tests
+Current automated inventory total: 92 tests
 
 ## Pytest Inventory
 
@@ -161,6 +162,11 @@ These validate S3 client creation prerequisites and the normal boto3 client path
 
 - `test_send_mock_auto_email_propagates_send_email_error`
   Confirms exceptions raised by `send_email()` propagate upward rather than being silently swallowed.
+
+### `tests/test_email_integration.py` (1 test)
+
+- `test_test_email_route_integrates_with_mock_email_pipeline`
+  Integration test verifying the full `/test-email` flow. The test starts the Flask application, sets the `SES_TEST_TO` environment variable, sends a request to the endpoint, and verifies that the route triggers the mock email generation pipeline. The test confirms that the rendered email content and subject are passed to the SES send layer while the external SES send operation itself is mocked.
 
 ## Playwright Accessibility Inventory
 
