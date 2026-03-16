@@ -178,7 +178,7 @@ def test_decode_token_payload_empty_token() -> None:
     assert cognito.decode_token_payload("") == {}
 
 
-def test_decode_token_payload_invalid_json_returns_empty_dict() -> None:
+def test_decode_token_payload_invalid_json() -> None:
     header = cognito.base64.urlsafe_b64encode(b'{"alg":"none"}').decode().rstrip("=")
     payload = cognito.base64.urlsafe_b64encode(b"not-json").decode().rstrip("=")
     token = f"{header}.{payload}.sig"
@@ -231,7 +231,7 @@ def test_exchange_code_for_tokens_sends_form_encoded_request(
     assert captured["content_type"] == "application/x-www-form-urlencoded"
 
 
-def test_get_current_user_returns_sub() -> None:
+def test_get_current_user() -> None:
     def fake_decoder(token):
         return {"sub": "user-123"}
 

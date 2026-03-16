@@ -46,7 +46,7 @@ def test_template_detail_route(client: FlaskClient) -> None:
     assert "Capture Workout" in response.get_data(as_text=True)
 
 
-def test_unknown_route_returns_404(client: FlaskClient) -> None:
+def test_unknown_route(client: FlaskClient) -> None:
     response = client.get("/misc")
     assert response.status_code == 404
 
