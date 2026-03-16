@@ -150,7 +150,7 @@ jobs:
       - name: Deploy SAM app
         run: |
           sam deploy \
-            --config-file backend/samconfig.toml \
+            --config-file "${{ github.workspace }}/backend/samconfig.toml" \
             --config-env default \
             --template-file .aws-sam/build/template.yaml \
             --stack-name "${{ env.stack_name }}" \
