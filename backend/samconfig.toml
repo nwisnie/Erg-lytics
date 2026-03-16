@@ -1,13 +1,13 @@
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "erglytics-version-0-5-1"
+stack_name = "erglytics-dev"
 resolve_s3 = true
-s3_prefix = "erglytics-version-0-5-1"
+s3_prefix = "erglytics-dev"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
-parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth\" AppBaseUrl=\"https://ra7jdv1jj1.execute-api.us-east-2.amazonaws.com/Prod\" SesFromEmail=\"updates@erglytics.com\" SesTestTo=\"erglytics@gmail.com\" UsersTableName=\"RowlyticsUsers\" TeamsTableName=\"RowlyticsTeams\" TeamMembersTableName=\"RowlyticsTeamMembers\" RecordingsTableName=\"RowlyticsRecordings\" WorkoutsTableName=\"RowlyticsWorkouts\" UploadBucketName=\"rowlyticsuploads\" UserPoolName=\"RowlyticsUserPool\" UserPoolClientName=\"RowlyticsUserPoolClient\" ManageSharedResources=\"false\" ExistingUserPoolId=\"us-east-2_miFqBsgsA\" ExistingUserPoolClientId=\"6na8lcnrau96407c76atn8641b\""
+parameter_overrides = "CognitoDomainPrefix=\"rowlytics-auth-recovery-20260314\" AppBaseUrl=\"https://v353vlxck0.execute-api.us-east-2.amazonaws.com/Prod\" SesFromEmail=\"updates@erglytics.com\" SesTestTo=\"erglytics@gmail.com\" UsersTableName=\"RowlyticsUsersRecovery\" TeamsTableName=\"RowlyticsTeamsRecovery\" TeamMembersTableName=\"RowlyticsTeamMembersRecovery\" RecordingsTableName=\"RowlyticsRecordingsRecovery\" WorkoutsTableName=\"RowlyticsWorkoutsRecovery\" UploadBucketName=\"rowlyticsupload-recovery-793523315638\" UserPoolName=\"RowlyticsUserPool\" UserPoolClientName=\"RowlyticsUserPoolClient\" ManageSharedResources=\"false\" ExistingUserPoolId=\"us-east-2_jXENfSnPZ\" ExistingUserPoolClientId=\"2lu6fopujo3usd6qdt47nt3b20\""
 
 [default.global.parameters]
 region = "us-east-2"
