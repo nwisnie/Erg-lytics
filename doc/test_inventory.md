@@ -15,9 +15,10 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and stage prefix header injection |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior and SES test-email handling |
+| `tests/test_mock_email.py` | `pytest` | 4 | Mock SES email composition, default-name fallback, content generation, and send-error propagation |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 87 tests
+Current automated inventory total: 91 tests
 
 ## Pytest Inventory
 
@@ -146,6 +147,20 @@ These validate S3 client creation prerequisites and the normal boto3 client path
 
 - `test_test_email_route_returns_failure_message_when_send_fails`
   Verifies the route correctly reports an error when the mocked email send operation raises an exception.
+
+### `tests/test_mock_email.py` (4 tests)
+
+- `test_send_mock_auto_email_calls_send_email_with_expected_arguments`
+  Confirms `send_mock_auto_email()` builds the expected subject, text body, and HTML body, then passes them to `send_email()` with the correct recipient.
+
+- `test_send_mock_auto_email_uses_default_name_when_name_is_none`
+  Confirms the mock email falls back to `"Rower"` when no name is provided.
+
+- `test_send_mock_auto_email_includes_expected_content`
+  Confirms the generated mock email includes expected personal/team statistics content and the Rowlytics app URL in both rendered output paths.
+
+- `test_send_mock_auto_email_propagates_send_email_error`
+  Confirms exceptions raised by `send_email()` propagate upward rather than being silently swallowed.
 
 ## Playwright Accessibility Inventory
 
