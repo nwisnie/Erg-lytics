@@ -20,7 +20,8 @@ Parameters:
 
   SesTestTo:
     Type: String
-    Description: Email address to receive test emails from, has to be verified on console. Use for now erglytics@gmail.com.
+    Default: ""
+    Description: Optional test-recipient email for SES.
 
   UsersTableName:
     Type: String
