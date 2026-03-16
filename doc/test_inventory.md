@@ -1,6 +1,6 @@
 # Rowlytics Test Inventory
 
-Last updated: 2026-03-14
+Last updated: 2026-03-15
 
 This document inventories the tests currently present in the repository. Current automated tests and test documentation are located under `tests/` and `playwright/tests/`.
 
@@ -8,6 +8,7 @@ This document inventories the tests currently present in the repository. Current
 
 | Suite | Framework | Test count | Focus |
 | --- | --- | ---: | --- |
+| `tests/test_alignment.py` | `pytest` | 23 | Practice-stroke assembly, progression-step generation, progression matching, and ideal-model coordinate selection |
 | `tests/test_app.py` | `pytest` | 3 | Flask app creation and basic route rendering |
 | `tests/test_auth.py` | `pytest` | 13 | Cognito helpers, token parsing, login URL generation, token exchange, user deletion, session context |
 | `tests/test_dynamodb.py` | `pytest` | 36 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
@@ -15,13 +16,62 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 61 tests
+Current automated inventory total: 84 tests
 
 ## Pytest Inventory
 
 ### `tests/conftest.py`
 
 Shared pytest bootstrap only. It inserts the project root into `sys.path` so tests can import the app package when run directly.
+
+### `tests/test_alignment.py` (23 tests)
+
+- `test_init_sets_default_values`
+  Confirms a new `PracticeStrokeAssembler` starts with an empty coordinate list and `finished == False`.
+- `test_assemble_practice_strokes_adds_valid_coordinate`
+  Confirms valid coordinate dictionaries are appended in normalized form.
+- `test_assemble_practice_strokes_returns_coordinates_when_finished`
+  Confirms passing `"finished"` marks the assembler complete and returns the accumulated coordinates.
+- `test_assemble_practice_strokes_raises_error_for_non_dict_input`
+  Confirms non-dictionary practice-stroke input is rejected.
+- `test_assemble_practice_strokes_raises_error_for_missing_keys`
+  Confirms incomplete coordinate dictionaries are rejected.
+- `test_assemble_progression_steps_raises_error_for_invalid_coordinates_type`
+  Confirms `assemble_progression_steps()` rejects non-list coordinate input.
+- `test_assemble_progression_steps_raises_error_for_too_few_coordinates`
+  Confirms at least two coordinates are required to build progression steps.
+- `test_assemble_progression_steps_raises_error_for_non_numeric_interval`
+  Confirms `progression_interval` must be numeric.
+- `test_assemble_progression_steps_raises_error_for_interval_too_small`
+  Confirms intervals below the accepted range are rejected.
+- `test_assemble_progression_steps_raises_error_for_interval_too_large`
+  Confirms intervals above the accepted range are rejected.
+- `test_assemble_progression_steps_returns_single_step_when_all_x_are_same`
+  Confirms a degenerate all-same-`x` trace produces a single progression step.
+- `test_assemble_progression_steps_generates_expected_steps`
+  Confirms normalized progression steps are generated at the expected intervals.
+- `test_assemble_progression_steps_forces_final_progression_step_to_one`
+  Confirms the final generated step is normalized to `1.0`.
+- `test_match_progression_interval_raises_error_for_empty_progression_intervals`
+  Confirms progression matching requires a non-empty progression-interval list.
+- `test_match_progression_interval_raises_error_for_empty_coordinate_list`
+  Confirms progression matching requires a non-empty current coordinate list.
+- `test_match_progression_interval_raises_error_when_name_not_found`
+  Confirms progression matching fails when the target body part is absent.
+- `test_match_progression_interval_returns_closest_progression_step`
+  Confirms the closest stored progression step is selected for the matching body part.
+- `test_get_ideal_coordinate_set_raises_error_for_non_dict_progression_step`
+  Confirms `get_ideal_coordinate_set()` requires a dictionary input for the current progression step.
+- `test_get_ideal_coordinate_set_raises_error_when_progression_step_missing`
+  Confirms the current progression step must include a `progression_step` value.
+- `test_get_ideal_coordinate_set_raises_error_when_time_missing`
+  Confirms the current progression step must include a `time` value.
+- `test_get_ideal_coordinate_set_raises_error_for_empty_ideal_model`
+  Confirms the ideal-model input must be a non-empty list.
+- `test_get_ideal_coordinate_set_raises_error_when_no_progression_steps_exist`
+  Confirms the ideal-model input must contain usable `progression_step` values.
+- `test_get_ideal_coordinate_set_returns_unique_bodyparts_for_closest_step`
+  Confirms the closest ideal progression step is selected and duplicate body-part names are collapsed to unique entries.
 
 ### `tests/test_app.py` (3 tests)
 
