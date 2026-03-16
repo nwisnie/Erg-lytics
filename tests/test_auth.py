@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -77,7 +78,7 @@ def test_exchange_code_for_tokens_posts_and_parses_response(
     monkeypatch.setattr(cognito.urlrequest, "urlopen", fake_urlopen)
 
     with app.app_context():
-        tokens = cognito.exchange_code_for_tokens("abc")
+        tokens = cognito.exchange_code_for_tokens("code")
 
     assert tokens == {"id_token": "token"}
     assert fake_urlopen.last_req.full_url == "https://auth.example.com/oauth2/token"
@@ -153,3 +154,126 @@ def test_user_context_reads_from_flask_session(monkeypatch: pytest.MonkeyPatch) 
         "user_email": "u@example.com",
         "user_name": "User",
     }
+
+
+def test_token_expired(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Create a token with exp in the past
+    expired_exp = int((datetime.now(timezone.utc) - timedelta(minutes=1)).timestamp())
+    token = {"exp": expired_exp}
+
+    # Mock datetime to return now
+    class FakeDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.now(timezone.utc)
+
+    monkeypatch.setattr("rowlytics_app.auth.cognito.decode_token_payload", FakeDatetime)
+
+    # Assume validate_token raises TokenExpiredError if expired
+    with pytest.raises(cognito.TokenExpiredError):
+        cognito.validate_token(token)
+
+
+def test_decode_token_payload_empty_token() -> None:
+    assert cognito.decode_token_payload("") == {}
+
+
+def test_decode_token_payload_invalid_json() -> None:
+    header = cognito.base64.urlsafe_b64encode(b'{"alg":"none"}').decode().rstrip("=")
+    payload = cognito.base64.urlsafe_b64encode(b"not-json").decode().rstrip("=")
+    token = f"{header}.{payload}.sig"
+
+    assert cognito.decode_token_payload(token) == {}
+
+
+def test_build_cognito_login_url_returns_none_when_domain_missing(app: Flask) -> None:
+    app.config.update(
+        COGNITO_CLIENT_ID="bjdsld",
+        COGNITO_REDIRECT_URI="https://app.example.com/callback",
+    )
+    with app.app_context():
+        assert cognito.build_cognito_login_url() is None
+
+
+def test_exchange_code_for_tokens_sends_form_encoded_request(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.config.update(
+        COGNITO_DOMAIN="auth.example.com",
+        COGNITO_CLIENT_ID="abc123",
+        COGNITO_REDIRECT_URI="https://app.example.com/callback",
+    )
+
+    fake_resp = MagicMock()
+    fake_resp.read.return_value = json.dumps({"access_token": "abc"}).encode("utf-8")
+    fake_resp.__enter__.return_value = fake_resp
+
+    captured = {}
+
+    def fake_urlopen(req):
+        captured["url"] = req.full_url
+        captured["data"] = req.data.decode("utf-8")
+        captured["content_type"] = \
+            req.headers.get("Content-type") or req.headers.get("Content-Type")
+        return fake_resp
+
+    monkeypatch.setattr(cognito.urlrequest, "urlopen", fake_urlopen)
+
+    with app.app_context():
+        result = cognito.exchange_code_for_tokens("code")
+
+    assert result == {"access_token": "abc"}
+    assert captured["url"] == "https://auth.example.com/oauth2/token"
+    assert "grant_type=authorization_code" in captured["data"]
+    assert "client_id=abc123" in captured["data"]
+    assert "code=code" in captured["data"]
+    assert "redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback" in captured["data"]
+    assert captured["content_type"] == "application/x-www-form-urlencoded"
+
+
+def test_get_current_user() -> None:
+    def fake_decoder(token):
+        return {"sub": "user-123"}
+
+    assert cognito.get_current_user("token", fake_decoder) == "user-123"
+
+
+def test_exchange_code_for_tokens_integration(monkeypatch) -> None:
+    app = Flask(__name__)
+    app.config.update(
+        COGNITO_DOMAIN="auth.example.com",
+        COGNITO_CLIENT_ID="client123",
+        COGNITO_REDIRECT_URI="https://app.example.com/callback",
+    )
+
+    captured = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps({
+                "access_token": "access123",
+                "id_token": "id123",
+            }).encode("utf-8")
+
+    def fake_urlopen(req):
+        captured["url"] = req.full_url
+        captured["data"] = req.data.decode("utf-8")
+        captured["headers"] = dict(req.header_items())
+        return FakeResponse()
+
+    monkeypatch.setattr(cognito.urlrequest, "urlopen", fake_urlopen)
+
+    with app.app_context():
+        tokens = cognito.exchange_code_for_tokens("code")
+
+    assert tokens["access_token"] == "access123"
+    assert captured["url"] == "https://auth.example.com/oauth2/token"
+    assert "grant_type=authorization_code" in captured["data"]
+    assert "client_id=client123" in captured["data"]
+    assert "code=code" in captured["data"]
