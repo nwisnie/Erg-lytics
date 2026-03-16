@@ -65,7 +65,7 @@ This document lists the AWS-related environment variables used by Rowlytics, the
 
 - `SES_FROM_EMAIL`
   - Default: `default@erglytics.com`
-  - Used by: `rowlytics_app/services/ses_email.py`, `rowlytics_app/services/send_test_email.py`
+  - Used by: `rowlytics_app/services/ses_email.py`
 
 - `AWS_REGION`
   - Default: `us-east-2`
@@ -73,7 +73,8 @@ This document lists the AWS-related environment variables used by Rowlytics, the
 
 - `SES_TEST_TO`
   - Default: `erglytics@gmail.com`
-  - Used by: `rowlytics_app/services/ses_email.py`, `rowlytics_app/services/send_test_email.py`
+  - Used by: `rowlytics_app/routes.py`
+  - Note: Recipient email address used by the `/test-email` development endpoint to verify SES email sending.
 
 ## Misc
 

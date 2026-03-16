@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <body style="margin: 0; padding: 0; font-family: Arial, sans-serif; color: #222; background-color: #f7f7f7;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f7f7f7; padding: 24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 8px; padding: 32px;">
+            <tr>
+              <td>
+                <h1 style="margin-top: 0; margin-bottom: 8px; font-size: 28px; color: #111;">
+                  Rowlytics Statistics Update
+                </h1>
+
+                <p style="margin-top: 0; margin-bottom: 24px; font-size: 16px; line-height: 1.5;">
+                  Hello {{ name or "Rower" }},
+                </p>
+
+                <p style="margin-top: 0; margin-bottom: 24px; font-size: 16px; line-height: 1.5;">
+                  Here is your latest automated statistics update.
+                </p>
+
+                <hr style="border: none; border-top: 1px solid #dddddd; margin: 24px 0;">
+
+                <h2 style="margin-bottom: 12px; font-size: 22px; color: #111;">
+                  Personal Statistics
+                </h2>
+
+                <p style="margin-top: 0; margin-bottom: 12px; font-size: 15px; line-height: 1.5;">
+                  Below is a summary of your latest personal performance statistics.
+                </p>
+
+                <ul style="margin-top: 0; margin-bottom: 24px; padding-left: 20px; font-size: 15px; line-height: 1.7;">
+                  <li><strong>Total Workouts:</strong> {{ personal_total_workouts or "—" }}</li>
+                  <li><strong>Total Distance:</strong> {{ personal_total_distance or "—" }}</li>
+                  <li><strong>Average Split:</strong> {{ personal_avg_split or "—" }}</li>
+                  <li><strong>Average Stroke Rate:</strong> {{ personal_avg_stroke_rate or "—" }}</li>
+                  <li><strong>Most Recent Workout:</strong> {{ personal_recent_workout or "—" }}</li>
+                </ul>
+
+                <hr style="border: none; border-top: 1px solid #dddddd; margin: 24px 0;">
+
+                <h2 style="margin-bottom: 12px; font-size: 22px; color: #111;">
+                  Team Statistics
+                </h2>
+
+                <p style="margin-top: 0; margin-bottom: 12px; font-size: 15px; line-height: 1.5;">
+                  Below is a summary of aggregated team performance statistics.
+                </p>
+
+                <ul style="margin-top: 0; margin-bottom: 24px; padding-left: 20px; font-size: 15px; line-height: 1.7;">
+                  <li><strong>Team Name:</strong> {{ team_name or "—" }}</li>
+                  <li><strong>Total Team Workouts:</strong> {{ team_total_workouts or "—" }}</li>
+                  <li><strong>Total Team Distance:</strong> {{ team_total_distance or "—" }}</li>
+                  <li><strong>Average Team Split:</strong> {{ team_avg_split or "—" }}</li>
+                  <li><strong>Average Team Stroke Rate:</strong> {{ team_avg_stroke_rate or "—" }}</li>
+                </ul>
+
+                <p style="margin-top: 0; margin-bottom: 24px; font-size: 15px; line-height: 1.5;">
+                  <a href="{{ app_url }}" style="color: #0b57d0; text-decoration: none;">
+                    Open Rowlytics
+                  </a>
+                </p>
+
+                <hr style="border: none; border-top: 1px solid #dddddd; margin: 24px 0;">
+
+                <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #666666;">
+                  This is an automated email from Rowlytics.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -362,3 +362,11 @@ def test_team_name_exists_reraises_unexpected_client_error(monkeypatch: pytest.M
 
     with pytest.raises(ClientError):
         dynamodb.team_name_exists(teams_table, "T")
+
+
+def test_query_all_returns_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    table = MagicMock()
+    table.query.return_value = {"Items": []}
+
+    result = dynamodb.query_all(table, KeyConditionExpression=MagicMock())
+    assert result == []
