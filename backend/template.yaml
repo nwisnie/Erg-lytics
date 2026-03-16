@@ -20,7 +20,7 @@ Parameters:
 
   SesTestTo:
     Type: String
-    Default: ""
+    Default: erglytics@gmail.com
     Description: Optional test-recipient email for SES.
 
   UsersTableName:
