@@ -3,7 +3,6 @@
 import base64
 import json
 import logging
-import math
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -17,6 +16,7 @@ except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
 
 from rowlytics_app.auth.cognito import delete_cognito_user
 from rowlytics_app.cv.alignment import PracticeStrokeAssembler
+from rowlytics_app.cv.feature_extraction.angles import normalized_joint_angle
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     fetch_team_members_page,
@@ -259,19 +259,10 @@ def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
     if not shoulder or not elbow or not wrist:
         return None
 
-    upper_x = shoulder["x"] - elbow["x"]
-    upper_y = shoulder["y"] - elbow["y"]
-    fore_x = wrist["x"] - elbow["x"]
-    fore_y = wrist["y"] - elbow["y"]
-    upper_mag = (upper_x * upper_x + upper_y * upper_y) ** 0.5
-    fore_mag = (fore_x * fore_x + fore_y * fore_y) ** 0.5
-    if upper_mag < 1e-4 or fore_mag < 1e-4:
+    try:
+        return normalized_joint_angle(shoulder, elbow, wrist)
+    except ValueError:
         return None
-
-    cosine = ((upper_x * fore_x) + (upper_y * fore_y)) / (upper_mag * fore_mag)
-    cosine = max(-1.0, min(1.0, cosine))
-    angle_rad = math.acos(cosine)
-    return angle_rad / math.pi
 
 
 def _extract_motion_series_candidates(coordinates, dominant_side):
