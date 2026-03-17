@@ -14,8 +14,8 @@
   --color-gray: #64748b;
 
   /* Brand */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
+  --color-primary: #111827;
+  --color-primary-hover: #000000;
 
   /* Status */
   --color-success: #22c55e;
@@ -121,45 +121,144 @@ body {
   gap: 1.5rem;
 }
 
-/* Floating profile icon */
-.profile-link {
-  position: fixed;
-  top: 1.25rem;
-  right: 1.5rem;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-pill);
-  background: var(--color-bg-gradient-end);
+/* ============================= */
+/* App Header (Top Bar)          */
+/* ============================= */
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  width: 100%;
+  background: #eef2f6;
+  border-bottom: var(--border-light-soft);
+}
+
+.app-header__inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.app-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  text-decoration: none;             /* remove purple underline */
   color: var(--color-slate-900);
+}
+
+.app-header__logo {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  display: block;
+}
+
+.app-header__title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* right-side icon row */
+.app-header__actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+/* square-ish icon buttons like Figma */
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
+
+  border-radius: 10px;
+  background: var(--color-white);
+  border: var(--border-light-soft);
+
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: var(--border-light);
-  box-shadow: var(--shadow-float);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  z-index: 40;
+
+  padding: 0;
+  margin: 0;
+  text-decoration: none;
+
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  line-height: 1;
+  overflow: hidden;
 }
 
-.profile-link:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-float-hover);
+.icon-btn:hover {
+  background: var(--color-subtle);
 }
 
-.profile-link__icon {
+.icon-btn__img {
   width: 22px;
   height: 22px;
-  fill: currentColor;
+  object-fit: contain;
+  display: block;
+  flex: 0 0 auto;
 }
 
-/* Homepage masthead */
-.masthead {
-  min-height: 25vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 2rem;
+@media (max-width: 640px) {
+  .app-header__inner {
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+  }
+
+  .app-header__brand {
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .app-header__logo {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+
+  .app-header__title {
+    font-size: 1.1rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-header__actions {
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    flex: 0 0 34px;
+    border-radius: 8px;
+  }
+
+  .icon-btn__img {
+    width: 18px;
+    height: 18px;
+  }
 }
 
 .logo-mark__image {
@@ -179,9 +278,11 @@ body {
 .quadrants {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-  padding: 2rem clamp(1rem, 5vw, 4rem);
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 2rem;
+  padding: 3rem clamp(1.5rem, 6vw, 5rem);
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 /* Footer */
@@ -276,7 +377,7 @@ body {
 }
 
 .quadrant img {
-  width: clamp(160px, 32%, 220px);
+  width: clamp(100px, 22%, 150px);
   height: auto;
   border-radius: var(--radius-lg);
   object-fit: contain;
@@ -336,34 +437,17 @@ body {
   }
 }
 
+@media (max-width: 1100px) {
+  .quadrants {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .quadrants {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
     padding: 1.25rem 1rem 2rem;
-  }
-
-  .quadrant {
-    padding: 1rem;
-    gap: 0.75rem;
-    align-items: center;
-    text-align: center;
-  }
-
-  .quadrant img {
-    width: min(120px, 90%);
-    height: auto;
-  }
-
-  .quadrant__copy {
-    min-width: 0;
-    width: 100%;
-    align-items: center;
-  }
-
-  .quadrant__copy .btn {
-    width: 100%;
-    max-width: 180px;
   }
 }
 
@@ -457,71 +541,6 @@ body {
 .capture {
   background: var(--color-bg);
   color: var(--color-text);
-}
-
-.capture__header {
-  background: var(--color-white);
-  border-bottom: var(--border-light-soft);
-  padding: 1rem clamp(1.5rem, 5vw, 3rem);
-  position: sticky;
-  top: 0;
-  z-index: 30;
-}
-
-.capture__header-inner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.capture__header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.capture__branding {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.capture__branding .logo-mark__image {
-  width: clamp(56px, 16vw, 72px);
-  margin: 0;
-}
-
-.capture__branding .logo-mark__text {
-  font-size: clamp(1.4rem, 6vw, 2.25rem);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex-shrink: 1;
-  max-width: 70vw;
-}
-
-.profile-link--header {
-  position: static;
-  top: auto;
-  right: auto;
-  z-index: auto;
-  width: var(--header-icon-size);
-  height: var(--header-icon-size);
-  flex: 0 0 auto;
-  background: var(--color-surface-subtle);
-  border: var(--border-light-med);
-  box-shadow: none;
-}
-
-.profile-link--header:hover {
-  transform: none;
-  box-shadow: none;
-  background: var(--color-surface-subtle-hover);
 }
 
 .capture__main {
@@ -1268,4 +1287,222 @@ body {
 
 .modal-open {
   overflow: hidden;
+}
+
+/* ============================= */
+/* Notifaction Drop Down         */
+/* ============================= */
+.notifications-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 70;
+}
+
+.notifications-dropdown[aria-hidden="true"] {
+  display: none;
+}
+
+.notifications-dropdown__panel {
+  width: min(360px, calc(100vw - 2rem));
+  background: var(--color-white);
+  color: var(--color-text);
+  border: var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  padding: 1rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.notifications-dropdown__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notifications-dropdown__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.notifications-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.notifications-list__item {
+  padding: 0.75rem 0.9rem;
+  background: var(--color-bg-gradient-end);
+  border: var(--border-light);
+  border-radius: 12px;
+}
+
+.notifications-list__text {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .notifications-dropdown {
+    top: 4.75rem;
+    right: 1rem;
+    left: 1rem;
+  }
+
+  .notifications-dropdown__panel {
+    width: 100%;
+  }
+}
+
+
+/* ============================= */
+/* Landing page (Startup)        */
+/* ============================= */
+
+.landing {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  text-align: center;
+
+  padding: 3.5rem 1rem;
+}
+
+.landing__hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2.25rem;
+  width: 100%;
+  max-width: 900px;
+}
+
+.landing__logo {
+  width: min(520px, 80vw);
+  height: auto;
+  max-height: 260px;
+  object-fit: contain;
+  display: block;
+}
+
+.landing__wordmark {
+  margin: 0;
+  font-size: clamp(3rem, 7vw, 6rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.landing__actions {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.landing__btn {
+  min-width: 260px;
+  min-height: 84px;
+  font-size: 1.6rem;
+  border-radius: 10px;
+  padding: 1.25rem 2rem;
+
+  align-self: center;
+}
+
+
+@media (max-width: 640px) {
+  .app-header__inner {
+    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+  }
+
+  .app-header__brand {
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .app-header__logo {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+
+  .app-header__title {
+    font-size: 1.1rem;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-header__actions {
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    flex: 0 0 34px;
+    border-radius: 8px;
+  }
+
+  .icon-btn__img {
+    width: 18px;
+    height: 18px;
+  }
+
+  .quadrants {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .quadrant {
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .quadrant img {
+    width: min(120px, 70%);
+  }
+
+  .quadrant__copy {
+    min-width: 0;
+    gap: 0.75rem;
+  }
+
+  .quadrant__copy h2 {
+    font-size: 1rem;
+  }
+
+  .quadrant__copy p {
+    font-size: 0.9rem;
+  }
+
+  .quadrant__copy .btn {
+    width: 100%;
+    text-align: center;
+    padding: 0.7rem 1rem;
+  }
+
+  .notifications-dropdown {
+    top: 4.25rem;
+    right: 1rem;
+    left: 1rem;
+  }
+
+  .notifications-dropdown__panel {
+    width: 100%;
+  }
 }
