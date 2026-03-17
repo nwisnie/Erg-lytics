@@ -7,7 +7,6 @@ const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
 const switchCameraBtn = document.getElementById("switchCamera");
 const poseStatus = document.getElementById("poseStatus");
-const alignmentOutput = document.getElementById("alignmentOutput");
 const overlay = document.getElementById("poseOverlay");
 const overlayCtx = overlay ? overlay.getContext("2d") : null;
 const viewport = document.querySelector(".capture__viewport");
@@ -53,8 +52,6 @@ const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
 const workoutSummaryText = "Workout session";
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
-const alignmentOutputSuccessClass = "capture__analysis-output--success";
-const alignmentOutputErrorClass = "capture__analysis-output--error";
 
 let stream = null;
 let poseLandmarker = null;
@@ -84,6 +81,9 @@ let workoutMovementFrames = [];
 let workoutMovementFrameTimesMs = [];
 let movementWindowClipCount = 0;
 let lastMovementDebugLogAtMs = 0;
+let latestWorkoutAnalysis = null;
+let latestWorkoutAnalysisText = "";
+let latestWorkoutScore = null;
 
 const SIDE_PROFILE_LEFT = [11, 13, 15, 23, 25, 27];
 const SIDE_PROFILE_RIGHT = [12, 14, 16, 24, 26, 28];
@@ -151,14 +151,6 @@ function setupCameraSwitchControl() {
     return;
   }
   switchCameraBtn.classList.add("capture__switch--hidden");
-}
-
-function setAlignmentOutput(text, tone = "neutral") {
-  if (!alignmentOutput) return;
-  alignmentOutput.textContent = text;
-  alignmentOutput.classList.remove(alignmentOutputSuccessClass, alignmentOutputErrorClass);
-  if (tone === "success") alignmentOutput.classList.add(alignmentOutputSuccessClass);
-  if (tone === "error") alignmentOutput.classList.add(alignmentOutputErrorClass);
 }
 
 function appendMovementFrame(frame, frameTimeMs) {
@@ -634,12 +626,16 @@ function formatAlignmentOutput(payload) {
   ].join("\n");
 }
 
+function rememberWorkoutAnalysis(payload) {
+  latestWorkoutAnalysis = payload;
+  latestWorkoutAnalysisText = formatAlignmentOutput(payload);
+  latestWorkoutScore = payload && payload.score != null ? payload.score : null;
+}
+
 async function analyzeLandmarkFrames(frames, createdAt, clipDurationSec, clipCount) {
   if (!apiBase || !Array.isArray(frames) || frames.length < 2) {
     throw new Error("Not enough landmark frames to analyze.");
   }
-
-  setAlignmentOutput("Analyzing landmark frames...");
 
   const response = await fetch(`${apiBase}/api/workouts/alignment-preview`, {
     method: "POST",
@@ -1016,7 +1012,6 @@ async function recordClip() {
     });
     if (!localMovement.movementQualified) {
       waitingForStrokeGate = true;
-      setAlignmentOutput(formatAlignmentOutput(localMovement), "error");
       poseStatus.textContent = "Take a few strokes before recording.";
       return;
     }
@@ -1039,7 +1034,6 @@ async function recordClip() {
     } catch (err) {
       const payload = err && typeof err === "object" ? err.payload : null;
       if (payload && typeof payload === "object") {
-        setAlignmentOutput(formatAlignmentOutput({ ...localMovement, ...payload }), "error");
         debugCapture("server_analysis_rejected", {
           clipIndex: movementWindowClipCount,
           status: payload.status || "unknown",
@@ -1051,15 +1045,15 @@ async function recordClip() {
           rawSignalPointCount: payload.rawSignalPointCount,
           signalDropCount: payload.signalDropCount
         });
+        poseStatus.textContent = payload.error || "Clip rejected";
       } else {
         const message = err instanceof Error ? err.message : String(err);
-        setAlignmentOutput(`Analysis failed: ${message}`, "error");
         debugCapture("server_analysis_failed", {
           clipIndex: movementWindowClipCount,
           message
         });
+        poseStatus.textContent = "Analysis failed";
       }
-      poseStatus.textContent = "Clip rejected";
       return;
     }
 
@@ -1067,23 +1061,16 @@ async function recordClip() {
       await uploadRecording(blob, createdAt);
     } catch (err) {
       console.error("Recording upload failed:", err);
-      setAlignmentOutput(
-        `${formatAlignmentOutput({ ...localMovement, ...analysisPayload })}\nclip saved: no (upload failed)`,
-        "error"
-      );
       poseStatus.textContent = "Upload failed";
       return;
     }
 
+    rememberWorkoutAnalysis({ ...localMovement, ...analysisPayload });
     debugCapture("clip_saved", {
       clipIndex: movementWindowClipCount,
       strokeCount: (analysisPayload && analysisPayload.strokeCount) || localMovement.strokeCount
     });
-    setAlignmentOutput(
-      `${formatAlignmentOutput({ ...localMovement, ...analysisPayload })}\nclip saved: yes`,
-      "success"
-    );
-    poseStatus.textContent = lastInFrame ? readyStatusText : defaultStatusText;
+    poseStatus.textContent = "Clip analyzed and saved";
   };
 
   recorder.start();
@@ -1099,6 +1086,7 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
     console.warn("Workout not saved: missing apiBase");
     return;
   }
+  const fallbackSummary = "Not enough valid strokes were detected to calculate a score.";
   try {
     const response = await fetch(`${apiBase}/api/workouts`, {
       method: "POST",
@@ -1107,8 +1095,13 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
         durationSec,
         startedAt,
         completedAt,
-        summary: workoutSummaryText,
-        workoutScore: null
+        summary: latestWorkoutAnalysis?.summary || fallbackSummary,
+        workoutScore: latestWorkoutScore,
+        alignmentDetails: latestWorkoutAnalysisText,
+        strokeCount: latestWorkoutAnalysis?.strokeCount ?? null,
+        cadenceSpm: latestWorkoutAnalysis?.cadenceSpm ?? null,
+        rangeOfMotion: latestWorkoutAnalysis?.rangeOfMotion ?? null,
+        dominantSide: latestWorkoutAnalysis?.dominantSide || null,
       })
     });
     const payload = await response.json();
@@ -1161,6 +1154,9 @@ async function startCamera() {
   workoutMovementFrameTimesMs = [];
   movementWindowClipCount = 0;
   lastMovementDebugLogAtMs = 0;
+  latestWorkoutAnalysis = null;
+  latestWorkoutAnalysisText = "";
+  latestWorkoutScore = null;
   debugCapture("camera_started", {
     facingMode: preferredFacingMode
   });
@@ -1204,6 +1200,9 @@ function stopCamera() {
     saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
   }
   workoutStartAt = null;
+  latestWorkoutAnalysis = null;
+  latestWorkoutAnalysisText = "";
+  latestWorkoutScore = null;
 
   toggleBtn.textContent = "Start";
   toggleBtn.classList.remove("btn--danger");
@@ -1395,7 +1394,6 @@ if (switchCameraBtn) {
 
 setupCameraSwitchControl();
 applyViewportMirrorState();
-setAlignmentOutput("No clip analyzed yet.");
 window.__rowlyticsCaptureDebugEnabled = captureDebugEnabled;
 window.__rowlyticsCaptureState = () => ({
   inFrameMs: Number(inFrameMs.toFixed(0)),
@@ -1409,6 +1407,7 @@ window.__rowlyticsCaptureState = () => ({
   waitingForStrokeGate,
   requestedPoseModel,
   modelCandidates: MP_MODEL_CANDIDATE_PATHS.map((item) => item.key),
+  latestWorkoutAnalysis,
 });
 debugCapture("debug_enabled", {
   enabled: captureDebugEnabled

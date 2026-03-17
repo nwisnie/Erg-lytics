@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, request, session
@@ -1338,6 +1339,11 @@ def save_workout():
     duration_sec = data.get("durationSec")
     workout_score = data.get("workoutScore")
     summary = (data.get("summary") or "").strip()
+    alignment_details = (data.get("alignmentDetails") or "").strip()
+    stroke_count = data.get("strokeCount")
+    cadence_spm = data.get("cadenceSpm")
+    range_of_motion = data.get("rangeOfMotion")
+    dominant_side = (data.get("dominantSide") or "").strip()
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
     created_at = data.get("createdAt") or completed_at
@@ -1372,12 +1378,37 @@ def save_workout():
 
     if workout_score is not None:
         try:
-            item["workoutScore"] = float(workout_score)
-        except (TypeError, ValueError):
+            score_value = Decimal(str(workout_score))
+        except (InvalidOperation, TypeError, ValueError):
             return jsonify({"error": "workoutScore must be numeric"}), 400
+        item["workoutScore"] = score_value
 
     if summary:
         item["summary"] = summary
+
+    if alignment_details:
+        item["alignmentDetails"] = alignment_details
+
+    if stroke_count is not None:
+        try:
+            item["strokeCount"] = int(round(float(stroke_count)))
+        except (TypeError, ValueError):
+            return jsonify({"error": "strokeCount must be numeric"}), 400
+
+    if cadence_spm is not None:
+        try:
+            item["cadenceSpm"] = Decimal(str(cadence_spm))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "cadenceSpm must be numeric"}), 400
+
+    if range_of_motion is not None:
+        try:
+            item["rangeOfMotion"] = Decimal(str(range_of_motion))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "rangeOfMotion must be numeric"}), 400
+
+    if dominant_side:
+        item["dominantSide"] = dominant_side
 
     try:
         workouts_table.put_item(Item=item)
