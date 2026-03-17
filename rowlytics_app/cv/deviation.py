@@ -1,66 +1,55 @@
-import math
+from rowlytics_app.cv.feature_extraction.angles import (
+    angle_between_vectors,
+    angle_difference,
+    joint_angle,
+    magnitude,
+    midpoint,
+    segment_orientation,
+    validate_point,
+    vector,
+)
 
 
 class SkeletalDeviationCalculator:
 
     def _validate_point(self, point):
-        if not isinstance(point, dict):
-            raise ValueError("Point must be a dictionary")
-
-        required_keys = {"x", "y"}
-        if not required_keys.issubset(point.keys()):
-            raise ValueError("Point must contain 'x' and 'y'")
-
-        if not isinstance(point["x"], (int, float)) or not isinstance(point["y"], (int, float)):
-            raise ValueError("'x' and 'y' must be numeric")
+        validate_point(point)
 
     def _vector(self, p1, p2):
-        self._validate_point(p1)
-        self._validate_point(p2)
-        return (p2["x"] - p1["x"], p2["y"] - p1["y"])
+        return vector(p1, p2)
 
     def _magnitude(self, vector):
-        return math.sqrt(vector[0] ** 2 + vector[1] ** 2)
+        return magnitude(vector)
 
     def _angle_between_vectors(self, v1, v2):
-        mag1 = self._magnitude(v1)
-        mag2 = self._magnitude(v2)
-
-        if mag1 == 0 or mag2 == 0:
-            raise ValueError("Cannot calculate angle with a zero-length segment")
-
-        dot = v1[0] * v2[0] + v1[1] * v2[1]
-        cos_theta = dot / (mag1 * mag2)
-
-        cos_theta = max(-1.0, min(1.0, cos_theta))
-
-        return math.degrees(math.acos(cos_theta))
+        return angle_between_vectors(v1, v2)
 
     def _joint_angle(self, point_a, joint_point, point_c):
-        self._validate_point(point_a)
-        self._validate_point(joint_point)
-        self._validate_point(point_c)
-
-        v1 = self._vector(joint_point, point_a)
-        v2 = self._vector(joint_point, point_c)
-
-        return self._angle_between_vectors(v1, v2)
+        return joint_angle(point_a, joint_point, point_c)
 
     def _segment_orientation(self, start_point, end_point):
-        self._validate_point(start_point)
-        self._validate_point(end_point)
-
-        dx = end_point["x"] - start_point["x"]
-        dy = end_point["y"] - start_point["y"]
-
-        if dx == 0 and dy == 0:
-            raise ValueError("Cannot calculate orientation of a zero-length segment")
-
-        return math.degrees(math.atan2(dy, dx))
+        return segment_orientation(start_point, end_point)
 
     def _angle_difference(self, angle1, angle2):
-        diff = abs(angle1 - angle2) % 360
-        return min(diff, 360 - diff)
+        return angle_difference(angle1, angle2)
+
+    def _joint_deviation(
+        self,
+        user_point_a,
+        user_joint,
+        user_point_c,
+        ideal_point_a,
+        ideal_joint,
+        ideal_point_c,
+    ):
+        user_angle = self._joint_angle(user_point_a, user_joint, user_point_c)
+        ideal_angle = self._joint_angle(ideal_point_a, ideal_joint, ideal_point_c)
+
+        return {
+            "user_angle": user_angle,
+            "ideal_angle": ideal_angle,
+            "deviation": abs(user_angle - ideal_angle)
+        }
 
     def arm_angle_deviation(
         self,
@@ -71,14 +60,14 @@ class SkeletalDeviationCalculator:
         ideal_elbow,
         ideal_shoulder
     ):
-        user_angle = self._joint_angle(user_hand, user_elbow, user_shoulder)
-        ideal_angle = self._joint_angle(ideal_hand, ideal_elbow, ideal_shoulder)
-
-        return {
-            "user_angle": user_angle,
-            "ideal_angle": ideal_angle,
-            "deviation": abs(user_angle - ideal_angle)
-        }
+        return self._joint_deviation(
+            user_hand,
+            user_elbow,
+            user_shoulder,
+            ideal_hand,
+            ideal_elbow,
+            ideal_shoulder,
+        )
 
     def leg_angle_deviation(
         self,
@@ -89,14 +78,14 @@ class SkeletalDeviationCalculator:
         ideal_knee,
         ideal_hip
     ):
-        user_angle = self._joint_angle(user_foot, user_knee, user_hip)
-        ideal_angle = self._joint_angle(ideal_foot, ideal_knee, ideal_hip)
-
-        return {
-            "user_angle": user_angle,
-            "ideal_angle": ideal_angle,
-            "deviation": abs(user_angle - ideal_angle)
-        }
+        return self._joint_deviation(
+            user_foot,
+            user_knee,
+            user_hip,
+            ideal_foot,
+            ideal_knee,
+            ideal_hip,
+        )
 
     def torso_angle_deviation(
         self,
@@ -129,14 +118,7 @@ class SkeletalDeviationCalculator:
         return name_map
 
     def _midpoint(self, p1, p2, name="midpoint"):
-        self._validate_point(p1)
-        self._validate_point(p2)
-
-        return {
-            "name": name,
-            "x": (p1["x"] + p2["x"]) / 2.0,
-            "y": (p1["y"] + p2["y"]) / 2.0
-        }
+        return midpoint(p1, p2, name=name)
 
     def compare_pose(self, user_model, ideal_model):
         user_points = self._build_name_map(user_model)

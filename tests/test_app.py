@@ -43,7 +43,9 @@ def test_landing_page_renders_expected_copy(client: FlaskClient) -> None:
 def test_template_detail_route(client: FlaskClient) -> None:
     response = client.get("/templates/capture-workout")
     assert response.status_code == 200
-    assert "Capture Workout" in response.get_data(as_text=True)
+    html = response.get_data(as_text=True)
+    assert "Capture Workout" in html
+    assert "Landmark Analysis Output" not in html
 
 
 def test_unknown_route(client: FlaskClient) -> None:
