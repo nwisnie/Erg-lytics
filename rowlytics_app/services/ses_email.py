@@ -3,15 +3,15 @@ import os
 import boto3
 from botocore.exceptions import ClientError
 
-AWS_REGION = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "us-east-2")
-FROM_EMAIL = os.getenv("SES_FROM_EMAIL")
-
 
 def send_email(to_email: str, subject: str, body_text: str, body_html: str | None = None) -> str:
-    if not FROM_EMAIL:
+    aws_region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "us-east-2")
+    from_email = os.getenv("SES_FROM_EMAIL")
+
+    if not from_email:
         raise ValueError("SES_FROM_EMAIL is not set")
 
-    ses = boto3.client("ses", region_name=AWS_REGION)
+    ses = boto3.client("ses", region_name=aws_region)
 
     message = {
         "Subject": {"Data": subject, "Charset": "UTF-8"},
@@ -22,7 +22,7 @@ def send_email(to_email: str, subject: str, body_text: str, body_html: str | Non
 
     try:
         resp = ses.send_email(
-            Source=FROM_EMAIL,
+            Source=from_email,
             Destination={"ToAddresses": [to_email]},
             Message=message,
         )
