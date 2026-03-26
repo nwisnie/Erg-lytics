@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from datetime import time
 from typing import Iterable
 from urllib import parse
 
@@ -176,7 +176,8 @@ def auth_callback() -> str:
     session["user_email"] = payload.get("email")
     session["user_name"] = payload.get("name") or payload.get("cognito:username")
 
-    latency = (time.perf_counter() - start) * 1000
+    end = time.perf_counter()
+    latency = (end - start) * 1000
     publish_login_latency(
         latency_ms=latency,
         environment=current_app.config.get("ROWLYTICS_ENV", "development"),
