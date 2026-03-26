@@ -9,15 +9,17 @@ This document inventories the tests currently present in the repository. Current
 | Suite | Framework | Test count | Focus |
 | --- | --- | ---: | --- |
 | `tests/test_alignment.py` | `pytest` | 23 | Practice-stroke assembly, progression-step generation, progression matching, and ideal-model coordinate selection |
-| `tests/test_app.py` | `pytest` | 3 | Flask app creation and basic route rendering |
-| `tests/test_auth.py` | `pytest` | 13 | Cognito helpers, token parsing, login URL generation, token exchange, user deletion, session context |
-| `tests/test_dynamodb.py` | `pytest` | 36 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
+| `tests/test_app.py` | `pytest` | 6 | Flask app creation and basic route rendering |
+| `tests/test_auth.py` | `pytest` | 20 | Cognito helpers, token parsing, login URL generation, token exchange, user deletion, session context |
+| `tests/test_dynamodb.py` | `pytest` | 37 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and stage prefix header injection |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior and SES test-email handling |
+| `tests/test_mock_email.py` | `pytest` | 4 | Mock SES email composition, default-name fallback, content generation, and send-error propagation |
+| `tests/test_email_integration.py` | `pytest` | 1 | Integration of `/test-email` route, mock email generation, template rendering, and SES send pipeline |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 87 tests
+Current automated inventory total: 103 tests
 
 ## Pytest Inventory
 
@@ -82,17 +84,23 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
   Smoke test for `GET /`, including expected landing-page copy.
 - `test_template_detail_route`
   Confirms `GET /templates/capture-workout` returns `200` and renders expected content.
+- `test_unknown_route`
+  Confirms running a `.get()` request with an unknown page returns `404`
+- `test_landing_page_post_not_allowed`
+  This runs a `.post()` request on the root page and confirms it cannot be written to
+- `test_cognito_login_url_integration`
+  This is an integration test between the cognito login features and the flask app
 
 ### `tests/test_auth.py` (13 tests)
 
 - Token parsing:
-  `test_decode_token_payload_returns_dict`, `test_decode_token_payload_handles_errors`
+  `test_decode_token_payload_returns_dict`, `test_decode_token_payload_handles_errors`, `test_decode_token_payload_empty_token`, `test_decode_token_payload_invalid_json`
 - Cognito login URL generation:
-  `test_build_cognito_login_url_missing_config_returns_none`, `test_build_cognito_login_url_builds_expected_url`
+  `test_build_cognito_login_url_missing_config_returns_none`, `test_build_cognito_login_url_builds_expected_url`,  `test_build_cognito_login_url_returns_none_when_domain_missing`
 - OAuth token exchange:
-  `test_exchange_code_for_tokens_requires_config`, `test_exchange_code_for_tokens_posts_and_parses_response`
+  `test_exchange_code_for_tokens_requires_config`, `test_exchange_code_for_tokens_posts_and_parses_response`, `test_token_expired`, `test_exchange_code_for_tokens_sends_form_encoded_request`, `test_exchange_code_for_tokens_integration`
 - Cognito client creation:
-  `test_get_cognito_client_requires_boto3`, `test_get_cognito_client_returns_client`
+  `test_get_cognito_client_requires_boto3`, `test_get_cognito_client_returns_client`, `test_get_current_user`
 - Cognito user deletion paths:
   `test_delete_cognito_user_uses_access_token`, `test_delete_cognito_user_fallbacks_to_admin_delete`, `test_delete_cognito_user_requires_pool_or_username`, `test_delete_cognito_user_raises_with_last_error`
 - Session helper:
@@ -115,7 +123,7 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
 - Pagination helpers:
   `test_query_all_handles_multiple_pages`, `test_scan_all_handles_multiple_pages`
 - Membership and ownership listing:
-  `test_list_team_memberships_uses_query_all`, `test_list_team_memberships_falls_back_to_scan_on_validation_error`, `test_list_team_members_by_team_delegates_to_query_all`, `test_list_owned_teams_returns_empty_when_attr_missing`, `test_list_owned_teams_calls_scan_all`, `test_list_recordings_delegates_to_query_all`
+  `test_list_team_memberships_uses_query_all`, `test_list_team_memberships_falls_back_to_scan_on_validation_error`, `test_list_team_members_by_team_delegates_to_query_all`, `test_list_owned_teams_returns_empty_when_attr_missing`, `test_list_owned_teams_calls_scan_all`, `test_list_recordings_delegates_to_query_all`, `test_query_all_returns_empty_list`
 - Team name existence checks:
   `test_team_name_exists_returns_false_for_empty_name`, `test_team_name_exists_raises_when_attr_missing`, `test_team_name_exists_true_when_query_returns_item`, `test_team_name_exists_uses_scan_when_query_empty`, `test_team_name_exists_fallback_on_allowed_client_error`, `test_team_name_exists_reraises_unexpected_client_error`
 
@@ -146,6 +154,25 @@ These validate S3 client creation prerequisites and the normal boto3 client path
 
 - `test_test_email_route_returns_failure_message_when_send_fails`
   Verifies the route correctly reports an error when the mocked email send operation raises an exception.
+
+### `tests/test_mock_email.py` (4 tests)
+
+- `test_send_mock_auto_email_calls_send_email_with_expected_arguments`
+  Confirms `send_mock_auto_email()` builds the expected subject, text body, and HTML body, then passes them to `send_email()` with the correct recipient.
+
+- `test_send_mock_auto_email_uses_default_name_when_name_is_none`
+  Confirms the mock email falls back to `"Rower"` when no name is provided.
+
+- `test_send_mock_auto_email_includes_expected_content`
+  Confirms the generated mock email includes expected personal/team statistics content and the Rowlytics app URL in both rendered output paths.
+
+- `test_send_mock_auto_email_propagates_send_email_error`
+  Confirms exceptions raised by `send_email()` propagate upward rather than being silently swallowed.
+
+### `tests/test_email_integration.py` (1 test)
+
+- `test_test_email_route_integrates_with_mock_email_pipeline`
+  Integration test verifying the full `/test-email` flow. The test starts the Flask application, sets the `SES_TEST_TO` environment variable, sends a request to the endpoint, and verifies that the route triggers the mock email generation pipeline. The test confirms that the rendered email content and subject are passed to the SES send layer while the external SES send operation itself is mocked.
 
 ## Playwright Accessibility Inventory
 

@@ -11,8 +11,6 @@ from urllib import request as urlrequest
 
 from flask import current_app
 
-from rowlytics_app.services.dynamodb import get_users_table
-
 try:
     import boto3
 except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
@@ -96,12 +94,6 @@ def delete_cognito_user(user_id: str, email: str | None, access_token: str | Non
         last_error = err
 
     raise RuntimeError(str(last_error) if last_error else "Unable to delete Cognito user")
-
-
-def get_user_by_email(email: str):
-    table = get_users_table()
-    user = table.get_item(Key={"email": email}).get("Item")
-    return user
 
 
 class TokenExpiredError(Exception):
