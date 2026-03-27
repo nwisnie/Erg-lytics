@@ -100,9 +100,22 @@ def test_segment_orientation_returns_expected_angle(calculator):
     assert angle == pytest.approx(90.0)
 
 
+def test_segment_orientation_returns_negative_90_for_downward_vertical_segment(calculator):
+    start = make_point("shoulder", 0, 0)
+    end = make_point("hip", 0, -5)
+
+    angle = calculator._segment_orientation(start, end)
+    assert angle == pytest.approx(-90.0)
+
+
 def test_angle_difference_handles_wraparound(calculator):
     diff = calculator._angle_difference(350, 10)
     assert diff == pytest.approx(20.0)
+
+
+def test_angle_difference_treats_vertical_orientations_as_equivalent(calculator):
+    diff = calculator._angle_difference(90, -90)
+    assert diff == pytest.approx(0.0)
 
 
 def test_arm_angle_deviation_zero_for_identical_models(calculator):

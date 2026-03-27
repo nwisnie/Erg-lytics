@@ -52,6 +52,7 @@ def joint_angle(point_a: dict, joint_point: dict, point_c: dict) -> float:
 
 
 def normalized_joint_angle(point_a: dict, joint_point: dict, point_c: dict) -> float:
+    """Return the joint angle as a 0..1 fraction of a 180-degree bend."""
     return joint_angle(point_a, joint_point, point_c) / 180.0
 
 
@@ -65,10 +66,21 @@ def segment_orientation(start_point: dict, end_point: dict) -> float:
     if delta_x == 0 and delta_y == 0:
         raise ValueError("Cannot calculate orientation of a zero-length segment")
 
+    if delta_x == 0:
+        return 90.0 if delta_y > 0 else -90.0
+
+    if delta_y == 0:
+        return 0.0 if delta_x > 0 else 180.0
+
     return math.degrees(math.atan2(delta_y, delta_x))
 
 
 def angle_difference(angle_a: float, angle_b: float) -> float:
+    if math.isclose(abs(angle_a), 90.0, abs_tol=1e-9):
+        angle_a = 90.0
+    if math.isclose(abs(angle_b), 90.0, abs_tol=1e-9):
+        angle_b = 90.0
+
     difference = abs(angle_a - angle_b) % 360
     return min(difference, 360 - difference)
 
