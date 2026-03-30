@@ -114,6 +114,7 @@ ANGLE_MIN_STROKE_AMPLITUDE = 0.006
 ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
 MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
 MOTION_SPIKE_BASE_DELTA = 0.075
+MAX_WORKOUT_DURATION_SEC = 60 * 60
 
 
 class MovementGateError(ValueError):
@@ -1355,6 +1356,10 @@ def save_workout():
 
     if duration_value is None or duration_value <= 0:
         return jsonify({"error": "durationSec must be a positive number"}), 400
+    if duration_value > MAX_WORKOUT_DURATION_SEC:
+        return jsonify({
+            "error": f"durationSec must be less than or equal to {MAX_WORKOUT_DURATION_SEC}",
+        }), 400
 
     duration_value = int(round(duration_value))
 

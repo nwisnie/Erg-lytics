@@ -645,6 +645,13 @@ body {
   box-shadow: none;
 }
 
+.capture__note {
+  margin: 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
 .capture__analysis {
   margin-top: 0.5rem;
   border: var(--border-light-soft);
