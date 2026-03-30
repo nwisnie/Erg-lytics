@@ -50,6 +50,57 @@
     return mins ? `${mins}m ${secs}s` : `${secs}s`;
   };
 
+  const asNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parseAlignmentDetails = (details) => {
+    const parsed = {};
+    (details || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const separatorIndex = line.indexOf(":");
+        if (separatorIndex < 0) return;
+        const key = line.slice(0, separatorIndex).trim().toLowerCase();
+        const value = line.slice(separatorIndex + 1).trim();
+        parsed[key] = value;
+      });
+    return parsed;
+  };
+
+  const getWorkoutMetrics = (workout) => {
+    const parsedDetails = parseAlignmentDetails(workout.alignmentDetails);
+    return {
+      score: asNumber(workout.workoutScore) ?? asNumber(parsedDetails.score),
+      summary: workout.summary || parsedDetails.summary || "No summary provided.",
+      strokeCount: asNumber(workout.strokeCount) ?? asNumber(parsedDetails["stroke count"]),
+      cadenceSpm: asNumber(workout.cadenceSpm) ?? asNumber(parsedDetails["cadence (spm)"]),
+      rangeOfMotion: asNumber(workout.rangeOfMotion) ?? asNumber(parsedDetails["range of motion"]),
+      dominantSide: workout.dominantSide || parsedDetails["dominant side"] || "",
+      signalStrategy: parsedDetails["signal strategy"] || "",
+    };
+  };
+
+  const buildMetricRow = (labelText, valueText, subtle = false) => {
+    const row = document.createElement("p");
+    row.className = subtle ? "workout-card__metric workout-card__metric--subtle" : "workout-card__metric";
+
+    const label = document.createElement("span");
+    label.className = "workout-card__metric-label";
+    label.textContent = `${labelText}:`;
+
+    const value = document.createElement("span");
+    value.className = "workout-card__metric-value";
+    value.textContent = valueText;
+
+    row.appendChild(label);
+    row.appendChild(value);
+    return row;
+  };
+
   const renderEmpty = () => {
     grid.innerHTML = "";
     const empty = document.createElement("div");
@@ -82,18 +133,52 @@
 
       const summary = document.createElement("p");
       summary.className = "workout-card__summary";
-      summary.textContent = workout.summary || "No summary provided.";
+      const metrics = getWorkoutMetrics(workout);
 
       const score = document.createElement("p");
-      score.className = "workout-card__meta";
-      const scoreValue = workout.workoutScore;
-      score.textContent = scoreValue === undefined || scoreValue === null
-        ? "Score: not yet calculated"
-        : `Score: ${scoreValue}`;
+      score.className = "workout-card__score";
+      if (metrics.score == null) {
+        score.classList.add("workout-card__score--missing");
+        score.textContent = "Score unavailable";
+      } else {
+        score.classList.add("workout-card__score--ok");
+        score.textContent = `${Math.round(metrics.score)}% alignment`;
+      }
+
+      summary.textContent = metrics.score == null
+        ? "Score could not be calculated because not enough strokes were taken."
+        : metrics.summary;
+
+      const metricList = document.createElement("div");
+      metricList.className = "workout-card__metrics";
+      metricList.appendChild(buildMetricRow(
+        "Stroke count",
+        metrics.strokeCount == null ? "Not detected" : String(metrics.strokeCount),
+      ));
+      metricList.appendChild(buildMetricRow(
+        "Cadence",
+        metrics.cadenceSpm == null ? "Not available" : `${metrics.cadenceSpm.toFixed(1)} spm`,
+      ));
+      metricList.appendChild(buildMetricRow(
+        "Range of motion",
+        metrics.rangeOfMotion == null ? "Not available" : metrics.rangeOfMotion.toFixed(3),
+      ));
+
+      if (metrics.dominantSide) {
+        metricList.appendChild(buildMetricRow("Dominant side", metrics.dominantSide, true));
+      }
+      if (metrics.signalStrategy) {
+        metricList.appendChild(buildMetricRow(
+          "Signal",
+          metrics.signalStrategy.replaceAll("_", " "),
+          true,
+        ));
+      }
 
       card.appendChild(header);
-      card.appendChild(summary);
       card.appendChild(score);
+      card.appendChild(summary);
+      card.appendChild(metricList);
       grid.appendChild(card);
     });
   };
