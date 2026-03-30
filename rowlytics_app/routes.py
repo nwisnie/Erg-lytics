@@ -126,6 +126,15 @@ def template_detail(slug: str) -> str:
     return render_template(card.template_name, card=card, **user_context())
 
 
+@public_bp.route("/workout-summaries/<workout_id>")
+def workout_summary_detail(workout_id: str) -> str:
+    return render_template(
+        "workout_summary_detail.html",
+        workout_id=workout_id,
+        **user_context(),
+    )
+
+
 @public_bp.route("/profile")
 def profile() -> str:
     return render_template("profile.html", **user_context())

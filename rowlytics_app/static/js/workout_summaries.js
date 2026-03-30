@@ -120,6 +120,13 @@
       const card = document.createElement("article");
       card.className = "recording-card workout-card";
 
+      card.style.cursor = "pointer";
+
+      card.addEventListener("click", () => {
+        const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
+        window.location.href = `${basePath}/workout-summaries/${workout.workoutId}`;
+      });
+
       const header = document.createElement("div");
       header.className = "workout-card__row";
       const title = document.createElement("h3");
