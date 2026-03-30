@@ -351,6 +351,11 @@ Resources:
                 - ses:SendEmail
                 - ses:SendRawEmail
               Resource: "*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
       Events:
         Root:
           Type: Api

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Iterable
 from urllib import parse
@@ -24,9 +25,11 @@ from rowlytics_app.auth.cognito import (
 )
 from rowlytics_app.auth.sessions import user_context
 from rowlytics_app.services.dynamodb import sync_user_profile
+from rowlytics_app.services.metrics import publish_login_latency
 from rowlytics_app.services.mock_email import send_mock_auto_email
 
 public_bp = Blueprint("public", __name__)
+APP_VERSION = "0.0.1"
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,7 @@ def signin() -> str:
 
 @public_bp.route("/auth/callback")
 def auth_callback() -> str:
+    start = time.perf_counter()
     code = request.args.get("code")
     if not code:
         return render_template("sign_in.html",
@@ -171,6 +175,13 @@ def auth_callback() -> str:
     session["user_id"] = payload.get("sub")
     session["user_email"] = payload.get("email")
     session["user_name"] = payload.get("name") or payload.get("cognito:username")
+
+    end = time.perf_counter()
+    latency = (end - start) * 1000
+    publish_login_latency(
+        latency_ms=latency,
+        environment=current_app.config.get("ROWLYTICS_ENV", "development"),
+    )
 
     stored_name = sync_user_profile(
         session.get("user_id"),
