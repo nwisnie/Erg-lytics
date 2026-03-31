@@ -6,13 +6,15 @@
 {% block content %}
 <main class="landing">
   <section class="landing__hero">
-    <img
-      class="landing__logo"
-      src="{{ 'images/erg_cool.png' | cloudfront_url }}"
-      alt="Erglytics logo"
-    />
+    <div class="landing__brand">
+      <img
+        class="landing__logo"
+        src="{{ 'images/erg_cool.png' | cloudfront_url }}"
+        alt="Erglytics logo"
+      />
 
-    <h1 class="landing__wordmark">Erg-lytics</h1>
+      <h1 class="landing__wordmark">Erg-lytics</h1>
+    </div>
 
     <div class="landing__actions">
       {% if login_url %}
@@ -20,7 +22,7 @@
           Login
         </a>
 
-        <a class="btn btn--dark landing__btn" href="{{ login_url }}">
+        <a class="btn btn--dark landing__btn" href="{{ signup_url or login_url }}">
           Create Account
         </a>
       {% else %}

@@ -21,6 +21,7 @@ from rowlytics_app.cv.feature_extraction.angles import normalized_joint_angle
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     fetch_team_members_page,
+    fetch_user_profile,
     get_ddb_tables,
     get_recordings_table,
     get_team,
@@ -1120,6 +1121,32 @@ def update_account_name():
 
     session["user_name"] = name
     return jsonify({"status": "ok", "name": name})
+
+
+@api_bp.route("/account/profile", methods=["GET"])
+def get_account_profile():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        profile = fetch_user_profile(user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load account profile", "detail": str(err)}), 500
+
+    current_name = profile.get("name") or session.get("user_name")
+    current_email = profile.get("email") or session.get("user_email")
+
+    if current_name:
+        session["user_name"] = current_name
+    if current_email:
+        session["user_email"] = current_email
+
+    return jsonify({
+        "userId": user_id,
+        "name": current_name,
+        "email": current_email,
+    })
 
 
 @api_bp.route("/account/delete", methods=["POST"])
