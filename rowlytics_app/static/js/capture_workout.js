@@ -11,6 +11,7 @@ const overlay = document.getElementById("poseOverlay");
 const overlayCtx = overlay ? overlay.getContext("2d") : null;
 const viewport = document.querySelector(".capture__viewport");
 const placeholder = document.getElementById("capturePlaceholder");
+const captureSessionNotice = document.getElementById("captureSessionNotice");
 const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
 const urlParams = (() => {
   try {
@@ -45,12 +46,16 @@ const defaultStatusText = "Side profile not in frame";
 const readyStatusText = "Side profile in frame";
 const userId = document.body?.dataset?.userId || "demo-user";
 const recordingDurationMs = 5000;
+const maxWorkoutDurationMs = 60 * 60 * 1000;
+const maxWorkoutDurationSec = maxWorkoutDurationMs / 1000;
 const inFrameThresholdMs = 5000;
 const recordingCooldownMs = 3000;
 const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
 const workoutSummaryText = "Workout session";
+const workoutDurationLimitText = "Workouts automatically stop after 1 hour.";
+const workoutDurationLimitReachedText = "Workout reached the 1-hour limit and stopped automatically.";
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 let stream = null;
@@ -77,6 +82,8 @@ let overlayWidth = 0;
 let overlayHeight = 0;
 let overlayDpr = 1;
 let workoutStartAt = null;
+let workoutStopDeadlineMs = null;
+let workoutStopTimeout = null;
 let workoutMovementFrames = [];
 let workoutMovementFrameTimesMs = [];
 let movementWindowClipCount = 0;
@@ -120,6 +127,11 @@ const captureDebugEnabled = (() => {
 function debugCapture(event, details = {}) {
   if (!captureDebugEnabled) return;
   console.log(`[capture-workout] ${event}`, details);
+}
+
+function updateCaptureSessionNotice(message = workoutDurationLimitText) {
+  if (!captureSessionNotice) return;
+  captureSessionNotice.textContent = message;
 }
 
 function isLikelyMobileDevice() {
@@ -863,6 +875,49 @@ function resetRecordingTimers() {
   waitingForStrokeGate = false;
 }
 
+function clearWorkoutStopTimeout() {
+  if (workoutStopTimeout) {
+    clearTimeout(workoutStopTimeout);
+    workoutStopTimeout = null;
+  }
+}
+
+function stopWorkoutForDurationLimit() {
+  if (!stream) return;
+  const completedAt = workoutStopDeadlineMs
+    ? new Date(workoutStopDeadlineMs).toISOString()
+    : new Date().toISOString();
+  debugCapture("workout_duration_limit_reached", {
+    completedAt,
+    maxWorkoutDurationSec
+  });
+  updateCaptureSessionNotice(workoutDurationLimitReachedText);
+  stopCamera({
+    stopReason: "time-limit",
+    completedAtOverride: completedAt
+  });
+}
+
+function scheduleWorkoutStopTimeout() {
+  clearWorkoutStopTimeout();
+  if (!workoutStartAt) {
+    workoutStopDeadlineMs = null;
+    return;
+  }
+
+  const workoutStartMs = Date.parse(workoutStartAt);
+  if (!Number.isFinite(workoutStartMs)) {
+    workoutStopDeadlineMs = null;
+    return;
+  }
+
+  workoutStopDeadlineMs = workoutStartMs + maxWorkoutDurationMs;
+  const remainingMs = Math.max(0, workoutStopDeadlineMs - Date.now());
+  workoutStopTimeout = setTimeout(() => {
+    stopWorkoutForDurationLimit();
+  }, remainingMs);
+}
+
 function cancelActiveRecording() {
   recordingCancelled = true;
   if (recorderStopTimeout) {
@@ -1150,6 +1205,7 @@ async function startCamera() {
   lastVideoTime = -1;
   resetRecordingTimers();
   workoutStartAt = new Date().toISOString();
+  scheduleWorkoutStopTimeout();
   workoutMovementFrames = [];
   workoutMovementFrameTimesMs = [];
   movementWindowClipCount = 0;
@@ -1157,6 +1213,7 @@ async function startCamera() {
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  updateCaptureSessionNotice();
   debugCapture("camera_started", {
     facingMode: preferredFacingMode
   });
@@ -1166,9 +1223,19 @@ async function startCamera() {
   }
 }
 
-function stopCamera() {
+function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) {
   running = false;
   cancelActiveRecording();
+  clearWorkoutStopTimeout();
+  const deadlineCompletedAt = workoutStopDeadlineMs
+    ? new Date(workoutStopDeadlineMs).toISOString()
+    : null;
+  const completedAt = completedAtOverride || (
+    stopReason === "time-limit" && deadlineCompletedAt
+      ? deadlineCompletedAt
+      : new Date().toISOString()
+  );
+  workoutStopDeadlineMs = null;
   if (stream) {
     stream.getTracks().forEach((t) => t.stop());
     stream = null;
@@ -1194,15 +1261,20 @@ function stopCamera() {
   }
 
   if (workoutStartAt) {
-    const completedAt = new Date().toISOString();
     const durationMs = Date.parse(completedAt) - Date.parse(workoutStartAt);
-    const durationSec = Math.max(1, Math.round(durationMs / 1000));
+    const durationSec = Math.min(
+      maxWorkoutDurationSec,
+      Math.max(1, Math.round(durationMs / 1000))
+    );
     saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
   }
   workoutStartAt = null;
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  if (stopReason !== "time-limit") {
+    updateCaptureSessionNotice();
+  }
 
   toggleBtn.textContent = "Start";
   toggleBtn.classList.remove("btn--danger");
@@ -1247,6 +1319,10 @@ async function switchCamera() {
 
 function loop() {
   if (!running) return;
+  if (workoutStopDeadlineMs && Date.now() >= workoutStopDeadlineMs) {
+    stopWorkoutForDurationLimit();
+    return;
+  }
   if (!poseLandmarker) {
     requestAnimationFrame(loop);
     return;
@@ -1405,6 +1481,7 @@ window.__rowlyticsCaptureState = () => ({
   lastInFrame,
   lastRawInFrameAtMs,
   waitingForStrokeGate,
+  workoutStopDeadlineMs,
   requestedPoseModel,
   modelCandidates: MP_MODEL_CANDIDATE_PATHS.map((item) => item.key),
   latestWorkoutAnalysis,

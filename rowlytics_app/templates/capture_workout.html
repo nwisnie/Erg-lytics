@@ -50,6 +50,9 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         Use Rear Camera
       </button>
     </div>
+    <p id="captureSessionNotice" class="capture__note" aria-live="polite">
+      Workouts automatically stop after 1 hour.
+    </p>
   </div>
 </main>
 {% endblock %}
