@@ -84,7 +84,7 @@ def test_sync_user_profile_returns_name_when_no_user_id(monkeypatch: pytest.Monk
     assert name == "Row Rower"
 
 
-def test_sync_user_profile_updates_with_email_and_derived_name(
+def test_sync_user_profile_updates_with_email_and_default_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     table = MagicMock()
@@ -102,7 +102,7 @@ def test_sync_user_profile_updates_with_email_and_derived_name(
     args, kwargs = table.update_item.call_args
     assert kwargs["Key"] == {"userId": "u1"}
     assert kwargs["UpdateExpression"] == update_expr
-    assert kwargs["ExpressionAttributeValues"][":name"] == "rower"
+    assert kwargs["ExpressionAttributeValues"][":name"] == "New Rower"
     assert kwargs["ExpressionAttributeValues"][":email"] == "rower@example.com"
 
 
