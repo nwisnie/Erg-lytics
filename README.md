@@ -47,6 +47,8 @@ sam deploy
 
 The deployment configuration is stored in 'samconfig.toml'.
 
+DO NOT change commit a different samconfig.toml unless there is an issue with the resources added currently. Maintain the repo samconfig.toml as the default. Change locally when deploying to a stack other than erglytics-dev and then do not include in git commits.
+
 Do *not deploy with ManageSharedResources as true*, unless you intend to create/rewrite the resources. It should be *false* on default.
 
 Be sure to *change the stack name to the correct stack* for your task (erglytics-dev, erglytics-version-..., erglytics-ui-test, etc.) to not overwrite incorrect stacks.
