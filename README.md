@@ -8,6 +8,17 @@ As a user rows, each stroke will be rated based on how far the user deviates fro
 ![Parts of Rowing Stroke](https://github.com/nwisnie/Erg-lytics/blob/main/rowlytics_app/static/images/super_stroker.png) <br><br>
 Right now, our plan is to have a score from 0 to 1 for the user’s hand/arm position *(should be straight during mid stroke for example)*, back position *(no slouching during the stroke start for example)*, and leg position *(should be straight during stroke completion for example)*. We plan to calculate each of these scores during all three portions of the stroke. When the rower finishes a workout, all of these scores will be tallied and the user will be able to see their total score, their average score for each portion of the stroke, and their average score for each body part.
 
+## CV Limitations, Assumptions and Ethical Notes
+Erglytics currently evaluates rowing posture using a side-view camera setup and compares detected body landmarks to an idealized stroke model. Because of this, even if the system says that your position is correct, results may be less reliable when:
+
+- the user is not fully visible from one side
+- the camera angle is not close to a side profile
+- lighting is poor or parts of the body are occluded
+- loose clothing, background clutter, or low video quality make landmarks hard to detect
+- the user’s body proportions, mobility, adaptive technique, or rowing style differ STRONGLY from the assumptions in the current model
+
+The scores should be treated as coaching assistance, not a medical diagnosis or safety advice. A lower score does not indicate immediately that the user is rowing incorrectly; it may reflect camera placement, visibility issues, or model limitations.
+
 ## Team-Centric Design
 Users are encouraged to take advantage of our team system by joining team! <br><br>
 Users on a team can either have the rower our coach status: <br>
