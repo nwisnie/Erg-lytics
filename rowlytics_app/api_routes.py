@@ -255,13 +255,13 @@ def _landmark_weight(name):
 
 def _summarize_alignment(score):
     if score is None:
-        return "Not enough matching coordinates to score this clip."
+        return "Not enough matching coordinates to calculate a consistency score for this clip."
     if score >= 85:
-        return "Great alignment for this clip."
+        return "Great consistency for this clip."
     if score >= 65:
-        return "Solid alignment, but there is room to tighten consistency."
+        return "Solid consistency, but there is room to tighten it further."
     if score >= 40:
-        return "Moderate drift detected. Focus on repeatable body positions."
+        return "Moderate drift detected. Focus on more repeatable body positions."
     return "Large drift detected. Recheck posture and frame setup."
 
 

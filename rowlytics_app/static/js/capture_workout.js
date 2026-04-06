@@ -48,6 +48,7 @@ const userId = document.body?.dataset?.userId || "demo-user";
 const recordingDurationMs = 5000;
 const maxWorkoutDurationMs = 60 * 60 * 1000;
 const maxWorkoutDurationSec = maxWorkoutDurationMs / 1000;
+const maxRecordingClipsPerWorkout = 3;
 const inFrameThresholdMs = 5000;
 const recordingCooldownMs = 3000;
 const inFrameDropoutGraceMs = 600;
@@ -56,6 +57,7 @@ const movementDebugLogIntervalMs = 500;
 const workoutSummaryText = "Workout session";
 const workoutDurationLimitText = "Workouts automatically stop after 1 hour.";
 const workoutDurationLimitReachedText = "Workout reached the 1-hour limit and stopped automatically.";
+const workoutClipLimitReachedText = `Maximum of ${maxRecordingClipsPerWorkout} clips reached for this workout.`;
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
 
 let stream = null;
@@ -153,6 +155,10 @@ function updateSwitchCameraButton() {
   switchCameraBtn.textContent = preferredFacingMode === "user"
     ? "Use Rear Camera"
     : "Use Front Camera";
+}
+
+function reachedWorkoutClipLimit() {
+  return movementWindowClipCount >= maxRecordingClipsPerWorkout;
 }
 
 function setupCameraSwitchControl() {
@@ -627,7 +633,7 @@ function formatAlignmentOutput(payload) {
     `signal source: ${signalSource}`,
     `analysis window (sec): ${analysisWindowSec}`,
     `clips observed: ${clipCount}`,
-    `score: ${score}`,
+    `consistency score: ${score}`,
     `summary: ${payload.summary || "No summary"}`,
     `anchor landmark: ${payload.anchorLandmark || "n/a"}`,
     `progression step: ${progression}`,
@@ -1005,7 +1011,7 @@ async function uploadRecording(blob, createdAt) {
 }
 
 async function recordClip() {
-  if (!stream || recordingInProgress) return;
+  if (!stream || recordingInProgress || reachedWorkoutClipLimit()) return;
 
   const recorderOptions = getRecorderOptions();
   if (recorderOptions === null) {
@@ -1125,7 +1131,9 @@ async function recordClip() {
       clipIndex: movementWindowClipCount,
       strokeCount: (analysisPayload && analysisPayload.strokeCount) || localMovement.strokeCount
     });
-    poseStatus.textContent = "Clip analyzed and saved";
+    poseStatus.textContent = reachedWorkoutClipLimit()
+      ? workoutClipLimitReachedText
+      : "Clip analyzed and saved";
   };
 
   recorder.start();
@@ -1374,6 +1382,9 @@ function loop() {
         if (!inFrame) {
           waitingForStrokeGate = false;
           poseStatus.textContent = defaultStatusText;
+        } else if (reachedWorkoutClipLimit()) {
+          waitingForStrokeGate = false;
+          poseStatus.textContent = workoutClipLimitReachedText;
         } else if (waitingForStrokeGate) {
           poseStatus.textContent = "Row until at least 3 strokes are detected.";
         } else {
@@ -1395,6 +1406,7 @@ function loop() {
       if (inFrame &&
           inFrameMs >= inFrameThresholdMs &&
           !recordingInProgress &&
+          !reachedWorkoutClipLimit() &&
           frameTime >= nextAllowedRecordTime) {
         const movementWindowSec = getMovementWindowSec();
         const liveMovement = evaluateMovementGate(
