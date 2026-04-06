@@ -11,8 +11,6 @@ from urllib import request as urlrequest
 
 from flask import current_app
 
-from rowlytics_app.services.dynamodb import get_users_table
-
 try:
     import boto3
 except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
@@ -31,19 +29,38 @@ def decode_token_payload(token: str) -> dict:
         return {}
 
 
-def build_cognito_login_url() -> str | None:
+def _build_cognito_ui_url(
+    path: str,
+    *,
+    screen_hint: str | None = None,
+    login_hint: str | None = None,
+) -> str | None:
     domain = current_app.config.get("COGNITO_DOMAIN")
     client_id = current_app.config.get("COGNITO_CLIENT_ID")
     redirect_uri = current_app.config.get("COGNITO_REDIRECT_URI")
     if not domain or not client_id or not redirect_uri:
         return None
-    query = parse.urlencode({
+    params = {
         "client_id": client_id,
         "response_type": "code",
         "scope": "openid email profile aws.cognito.signin.user.admin",
         "redirect_uri": redirect_uri,
-    })
-    return f"https://{domain}/oauth2/authorize?{query}"
+    }
+    if screen_hint:
+        params["screen_hint"] = screen_hint
+    if login_hint:
+        params["login_hint"] = login_hint
+
+    query = parse.urlencode(params)
+    return f"https://{domain}{path}?{query}"
+
+
+def build_cognito_login_url() -> str | None:
+    return _build_cognito_ui_url("/oauth2/authorize")
+
+
+def build_cognito_signup_url() -> str | None:
+    return _build_cognito_ui_url("/signup")
 
 
 def exchange_code_for_tokens(code: str) -> dict:
@@ -96,12 +113,6 @@ def delete_cognito_user(user_id: str, email: str | None, access_token: str | Non
         last_error = err
 
     raise RuntimeError(str(last_error) if last_error else "Unable to delete Cognito user")
-
-
-def get_user_by_email(email: str):
-    table = get_users_table()
-    user = table.get_item(Key={"email": email}).get("Item")
-    return user
 
 
 class TokenExpiredError(Exception):

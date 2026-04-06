@@ -16,18 +16,24 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
 {% block content %}
 <main class="page page-pad capture__main">
   <div class="container container--wide stack">
-      <div id="poseStatus" class="pose-status pose-status--hidden">Full body not in frame</div>
+      <div id="poseStatus" class="pose-status pose-status--hidden">Side profile not in frame</div>
 
     <section class="capture__frame">
       <div class="capture__viewport">
         <div id="capturePlaceholder" class="capture__placeholder" aria-live="polite">
-          <p class="capture__placeholder-text">Position your body like the below image</p>
+          <p class="capture__placeholder-text">Position your side profile like the guide below</p>
           <img
             class="capture__placeholder-image"
             src="{{ 'images/erg_cool.png' | cloudfront_url }}"
             alt="Rowing posture guide"
           />
-          <p class="capture__placeholder-text">Keep full body in frame when working out</p>
+          <p class="capture__placeholder-text">Keep one body side (shoulder to ankle) in frame</p>
+          <p class="capture__note">
+            Lighting, camera angle, loose clothing, or partial body visibility may reduce feedback's accuracy.
+          </p>
+          <p class="capture__note">
+            Feedback is meant to support coaching and practice, and may not fit every body type or rowing style equally well.
+          </p>
         </div>
         <video
           id="liveCamera"
@@ -50,6 +56,9 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         Use Rear Camera
       </button>
     </div>
+    <p id="captureSessionNotice" class="capture__note" aria-live="polite">
+      Workouts automatically stop after 1 hour.
+    </p>
   </div>
 </main>
 {% endblock %}

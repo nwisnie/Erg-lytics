@@ -111,17 +111,49 @@
 
       const summary = document.createElement("p");
       summary.className = "workout-card__summary";
-      summary.textContent = workout.summary || "No summary provided.";
+      const metrics = getWorkoutMetrics(workout);
 
       const score = document.createElement("p");
-      score.className = "workout-card__meta";
-      const scoreValue = workout.workoutScore;
-      score.textContent = scoreValue === undefined || scoreValue === null
-        ? "Score: not yet calculated"
-        : `Score: ${scoreValue}`;
+      score.className = "workout-card__score";
+      if (metrics.score == null) {
+        score.classList.add("workout-card__score--missing");
+        score.textContent = "Consistency score unavailable";
+      } else {
+        score.classList.add("workout-card__score--ok");
+        score.textContent = `${Math.round(metrics.score)}% consistency`;
+      }
+
+      summary.textContent = metrics.score == null
+        ? "Consistency score could not be calculated because not enough strokes were taken."
+        : metrics.summary;
+
+      const metricList = document.createElement("div");
+      metricList.className = "workout-card__metrics";
+      metricList.appendChild(buildMetricRow(
+        "Stroke count",
+        metrics.strokeCount == null ? "Not detected" : String(metrics.strokeCount),
+      ));
+      metricList.appendChild(buildMetricRow(
+        "Cadence",
+        metrics.cadenceSpm == null ? "Not available" : `${metrics.cadenceSpm.toFixed(1)} spm`,
+      ));
+      metricList.appendChild(buildMetricRow(
+        "Range of motion",
+        metrics.rangeOfMotion == null ? "Not available" : metrics.rangeOfMotion.toFixed(3),
+      ));
+
+      if (metrics.dominantSide) {
+        metricList.appendChild(buildMetricRow("Dominant side", metrics.dominantSide, true));
+      }
+      if (metrics.signalStrategy) {
+        metricList.appendChild(buildMetricRow(
+          "Signal",
+          metrics.signalStrategy.replaceAll("_", " "),
+          true,
+        ));
+      }
 
       card.appendChild(header);
-      card.appendChild(summary);
       card.appendChild(score);
       workGrid.appendChild(card);
     });

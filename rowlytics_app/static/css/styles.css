@@ -645,6 +645,50 @@ body {
   box-shadow: none;
 }
 
+.capture__note {
+  margin: 0;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.capture__analysis {
+  margin-top: 0.5rem;
+  border: var(--border-light-soft);
+  border-radius: var(--radius-lg);
+  background: var(--color-white);
+  padding: 0.9rem 1rem;
+}
+
+.capture__analysis-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.capture__analysis-output {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-subtle);
+  color: var(--color-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.capture__analysis-output--success {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.capture__analysis-output--error {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .capture__switch--hidden {
   display: none;
 }
@@ -704,6 +748,10 @@ body {
   .capture__controls .btn {
     width: 100%;
     text-align: center;
+  }
+
+  .capture__analysis {
+    padding: 0.8rem;
   }
 
   .capture__header-inner {
@@ -972,16 +1020,51 @@ body {
 }
 
 .workout-card__summary {
-  margin: 0.65rem 0 0.35rem;
-  color: var(--color-muted-dark);
-  font-weight: 600;
+  margin: 0.4rem 0 0;
+  color: #284b73;
+  font-weight: 500;
 }
 
-.workout-card__meta {
+.workout-card__score {
+  margin: 0.75rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.workout-card__score--ok {
+  color: #166534;
+}
+
+.workout-card__score--missing {
+  color: #991b1b;
+}
+
+.workout-card__metrics {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.workout-card__metric {
   margin: 0;
-  color: var(--color-muted-dark-2);
-  font-size: 0.9rem;
+  color: #284b73;
+  font-size: 0.92rem;
+}
+
+.workout-card__metric--subtle {
+  color: #4a6485;
+  font-size: 0.84rem;
+}
+
+.workout-card__metric-label {
   font-weight: 600;
+  color: #111111;
+}
+
+.workout-card__metric-value {
+  margin-left: 0.3rem;
+  font-weight: 400;
+  color: #284b73;
 }
 
 .recordings-message {
@@ -1325,13 +1408,14 @@ body {
 /* Landing page (Startup)        */
 /* ============================= */
 
-.landing {
+main.landing {
   flex: 1;
   display: grid;
   place-items: center;
   text-align: center;
-
   padding: 3.5rem 1rem;
+  min-height: calc(100svh - 88px);
+  box-sizing: border-box;
 }
 
 .landing__hero {
@@ -1341,6 +1425,13 @@ body {
   gap: 2.25rem;
   width: 100%;
   max-width: 900px;
+}
+
+.landing__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .landing__logo {
@@ -1463,5 +1554,73 @@ body {
 
   .notifications-dropdown__panel {
     width: 100%;
+  }
+
+  body.landing {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  main.landing {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+    padding: 1rem 1rem 1rem;
+  }
+
+  .landing__hero {
+    flex: 1;
+    justify-content: space-evenly;
+    gap: 1rem;
+    max-width: 100%;
+    padding-block: 0.5rem 1.05rem;
+  }
+
+  .landing__brand {
+    gap: 0.1rem;
+  }
+
+  .landing__logo {
+    width: min(60vw, 220px);
+    max-height: 122px;
+    margin-bottom: 0;
+  }
+
+  .landing__wordmark {
+    font-size: clamp(1.95rem, 9vw, 2.8rem);
+    line-height: 0.95;
+  }
+
+  .landing__actions {
+    width: 100%;
+    gap: 0.75rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .landing__btn {
+    min-width: 0;
+    width: 100%;
+    min-height: 50px;
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+  }
+
+  body.landing .footer {
+    margin-top: auto;
+    gap: 0.55rem;
+    padding: 0.7rem 1rem max(0.7rem, env(safe-area-inset-bottom));
+    font-size: 0.82rem;
+  }
+
+  body.landing .footer__socials,
+  body.landing .footer__links {
+    gap: 0.45rem 0.65rem;
+  }
+
+  body.landing .footer_version {
+    font-size: 0.72rem;
   }
 }

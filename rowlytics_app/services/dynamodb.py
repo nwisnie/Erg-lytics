@@ -81,13 +81,22 @@ def get_ddb_tables():
     return get_users_table(), get_team_members_table()
 
 
+def fetch_user_profile(user_id: str | None) -> dict:
+    if not user_id:
+        return {}
+
+    table = get_users_table()
+    response = table.get_item(Key={"userId": user_id})
+    return response.get("Item") or {}
+
+
 def sync_user_profile(user_id: str | None, email: str | None, name: str | None) -> str | None:
     if not user_id:
         logger.debug("sync_user_profile: no user_id provided")
         return name
     table = get_users_table()
 
-    safe_name = name or (email.split("@")[0] if email else "New Rower")
+    safe_name = name or "New Rower"
     now = now_iso()
 
     update_expr = (
