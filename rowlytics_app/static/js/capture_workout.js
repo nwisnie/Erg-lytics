@@ -55,7 +55,9 @@ const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
 const workoutSummaryText = "Workout session";
-const workoutDurationLimitText = "Workouts automatically stop after 1 hour.";
+const workoutDurationLimitText = (
+  "Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day."
+);
 const workoutDurationLimitReachedText = "Workout reached the 1-hour limit and stopped automatically.";
 const workoutClipLimitReachedText = `Maximum of ${maxRecordingClipsPerWorkout} clips reached for this workout.`;
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
@@ -948,7 +950,7 @@ function getRecorderOptions() {
   return supported ? { mimeType: supported } : {};
 }
 
-async function requestUploadUrl(contentType) {
+async function requestUploadUrl(contentType, durationSec, createdAt) {
   const response = await fetch(`${apiBase}/api/recordings/presign`, {
     method: "POST",
     headers: {
@@ -956,7 +958,9 @@ async function requestUploadUrl(contentType) {
     },
     body: JSON.stringify({
       userId,
-      contentType
+      contentType,
+      durationSec,
+      createdAt
     })
   });
 
@@ -987,7 +991,8 @@ async function saveRecordingMetadata(metadata) {
 
 async function uploadRecording(blob, createdAt) {
   const contentType = blob.type || "video/webm";
-  const presign = await requestUploadUrl(contentType);
+  const durationSec = recordingDurationMs / 1000;
+  const presign = await requestUploadUrl(contentType, durationSec, createdAt);
 
   const uploadResponse = await fetch(presign.uploadUrl, {
     method: "PUT",
@@ -1005,7 +1010,7 @@ async function uploadRecording(blob, createdAt) {
     userId,
     objectKey: presign.objectKey,
     contentType,
-    durationSec: recordingDurationMs / 1000,
+    durationSec,
     createdAt
   });
 }
@@ -1122,7 +1127,7 @@ async function recordClip() {
       await uploadRecording(blob, createdAt);
     } catch (err) {
       console.error("Recording upload failed:", err);
-      poseStatus.textContent = "Upload failed";
+      poseStatus.textContent = err instanceof Error ? err.message : "Upload failed";
       return;
     }
 

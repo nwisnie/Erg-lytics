@@ -322,6 +322,64 @@ def test_list_recordings_delegates_to_query_all(monkeypatch: pytest.MonkeyPatch)
     assert result == ["recording"]
 
 
+def test_sum_recording_durations_for_utc_date_uses_created_at_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_query_all(table, **kwargs):
+        captured.update(kwargs)
+        return [
+            {"durationSec": 5},
+            {"durationSec": "4.6"},
+            {"durationSec": None},
+        ]
+
+    monkeypatch.setattr(dynamodb, "query_all", fake_query_all)
+
+    total = dynamodb.sum_recording_durations_for_utc_date(MagicMock(), "u1", "2026-04-05")
+
+    assert total == 10
+    assert captured["IndexName"] == dynamodb.RECORDINGS_CREATED_AT_INDEX
+    assert "KeyConditionExpression" in captured
+
+
+def test_sum_recording_durations_for_utc_date_falls_back_when_index_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = {"count": 0}
+
+    def fake_query_all(table, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise make_client_error("ValidationException")
+        return [
+            {"createdAt": "2026-04-05T01:00:00Z", "durationSec": 5},
+            {"createdAt": "2026-04-05T22:00:00+00:00", "durationSec": "5"},
+            {"createdAt": "2026-04-05T23:30:00-05:00", "durationSec": 7},
+            {"createdAt": "invalid", "durationSec": 9},
+        ]
+
+    monkeypatch.setattr(dynamodb, "query_all", fake_query_all)
+
+    total = dynamodb.sum_recording_durations_for_utc_date(MagicMock(), "u1", "2026-04-05")
+
+    assert total == 10
+    assert calls["count"] == 2
+
+
+def test_sum_recording_durations_for_utc_date_reraises_unexpected_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_query_all(*_, **__):
+        raise make_client_error("AccessDenied")
+
+    monkeypatch.setattr(dynamodb, "query_all", raise_query_all)
+
+    with pytest.raises(ClientError):
+        dynamodb.sum_recording_durations_for_utc_date(MagicMock(), "u1", "2026-04-05")
+
+
 def test_team_name_exists_returns_false_for_empty_name() -> None:
     assert dynamodb.team_name_exists(MagicMock(), "") is False
 
