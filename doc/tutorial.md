@@ -21,9 +21,8 @@ Before you begin using our project, you must have the following:
 ## Setup/Installation
 1. Open the Erglytics application in your web browser using the shared link.
 2. Select *Create Account*.
-3. Select *Sign Up* at the bottom.
-4. Enter a valid email and password.
-5. Confirm your account's email through verification steps.
+3. Enter a valid email and password.
+4. Confirm your account's email through verification steps.
 
 After your email is verified, you will be automatically taken to the home dashboard.
 ## First Workflow (step-by-step guide)
