@@ -21,7 +21,7 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         <h1>{{ card.title }}</h1>
         <p>{{ card.blurb }}</p>
         <br>
-        <p>Review your most recent workouts. Newest appear first.</p>
+        <p>Review your most recent bla workouts. Newest appear first.</p>
       </div>
       <div class="recordings-panel__header">
         <h2>Past Workouts</h2>
@@ -36,6 +36,20 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         Load more summaries
       </button>
       <p id="workoutsMessage" class="recordings-message" aria-live="polite"></p>
+
+      <div class="recordings-panel__header">
+        <h2>Recorded Clips</h2>
+        <p>Auto-captured clips appear here after uploads finish.</p>
+      </div>
+      <div id="recordingsGrid" class="recordings-grid"></div>
+      <button
+        id="recordingsLoadMore"
+        class="btn btn--subtle recordings-load-more recordings-load-more--hidden"
+        type="button"
+      >
+        Load more clips
+      </button>
+      <p id="recordingsMessage" class="recordings-message" aria-live="polite"></p>
     </section>
   </div>
 </main>

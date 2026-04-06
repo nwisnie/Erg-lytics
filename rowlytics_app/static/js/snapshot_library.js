@@ -1,12 +1,12 @@
 (() => {
   const PAGE_SIZE = 8;
 
-  const grid = document.getElementById("recordingsGrid");
-  const message = document.getElementById("recordingsMessage");
-  const loadMoreBtn = document.getElementById("recordingsLoadMore");
+  const recGrid = document.getElementById("recordingsrecGrid");
+  const recMessage = document.getElementById("recordingsrecMessage");
+  const recLoadMoreBtn = document.getElementById("recordingsLoadMore");
   const userId = document.body?.dataset?.userId;
 
-  if (!grid || !message) return;
+  if (!recGrid || !recMessage) return;
 
   const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
   const getApiUrl = (path) => {
@@ -18,8 +18,8 @@
   };
 
   if (!userId) {
-    message.textContent = "No user ID available to load recordings.";
-    message.classList.add("recordings-message--error");
+    recMessage.textContent = "No user ID available to load recordings.";
+    recMessage.classList.add("recordings-recMessage--error");
     return;
   }
 
@@ -27,31 +27,31 @@
   let nextCursor = null;
   let loading = false;
 
-  const setMessage = (text, tone) => {
-    message.textContent = text;
-    message.classList.remove("recordings-message--error", "recordings-message--success");
-    if (tone === "error") message.classList.add("recordings-message--error");
-    if (tone === "success") message.classList.add("recordings-message--success");
+  const setrecMessage = (text, tone) => {
+    recMessage.textContent = text;
+    recMessage.classList.remove("recordings-recMessage--error", "recordings-recMessage--success");
+    if (tone === "error") recMessage.classList.add("recordings-recMessage--error");
+    if (tone === "success") recMessage.classList.add("recordings-recMessage--success");
   };
 
   const setLoadMoreState = (cursor, isLoading = false) => {
     nextCursor = cursor || null;
-    if (!loadMoreBtn) return;
-    loadMoreBtn.classList.toggle("recordings-load-more--hidden", !nextCursor);
-    loadMoreBtn.disabled = isLoading;
-    loadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
+    if (!recLoadMoreBtn) return;
+    recLoadMoreBtn.classList.toggle("recordings-load-more--hidden", !nextCursor);
+    recLoadMoreBtn.disabled = isLoading;
+    recLoadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
   };
 
   const renderEmpty = () => {
-    grid.innerHTML = "";
+    recGrid.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "recordings-empty";
     empty.textContent = "No recordings yet.";
-    grid.appendChild(empty);
+    recGrid.appendChild(empty);
   };
 
   const renderRecordings = () => {
-    grid.innerHTML = "";
+    recGrid.innerHTML = "";
     if (!recordings.length) {
       renderEmpty();
       return;
@@ -77,7 +77,7 @@
 
       card.appendChild(video);
       card.appendChild(meta);
-      grid.appendChild(card);
+      recGrid.appendChild(card);
     });
   };
 
@@ -91,7 +91,7 @@
     loading = true;
     setLoadMoreState(nextCursor, true);
     if (!append) {
-      setMessage("Loading recordings...");
+      setrecMessage("Loading recordings...");
     }
 
     try {
@@ -108,24 +108,24 @@
         : (payload.recordings || []);
       renderRecordings();
       setLoadMoreState(payload.nextCursor, false);
-      setMessage("");
+      setrecMessage("");
     } catch (err) {
       if (!append) {
         recordings = [];
         renderEmpty();
       }
-      setMessage(err.message || "Unable to load recordings", "error");
+      setrecMessage(err.recMessage || "Unable to load recordings", "error");
       setLoadMoreState(nextCursor, false);
     } finally {
       loading = false;
-      if (loadMoreBtn) {
-        loadMoreBtn.disabled = false;
+      if (recLoadMoreBtn) {
+        recLoadMoreBtn.disabled = false;
       }
     }
   };
 
-  if (loadMoreBtn) {
-    loadMoreBtn.addEventListener("click", async () => {
+  if (recLoadMoreBtn) {
+    recLoadMoreBtn.addEventListener("click", async () => {
       await loadRecordings({ append: true });
     });
   }
