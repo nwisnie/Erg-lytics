@@ -4,6 +4,15 @@
 
 {% block body_class %}capture account-settings{% endblock %}
 
+{% block body_attrs %}
+data-api-base="{{ request.url_root.rstrip('/') }}"
+data-account-name-url="{{ url_for('api.update_account_name') }}"
+data-account-delete-url="{{ url_for('api.delete_account') }}"
+data-home-url="{{ url_for('public.landing_page') }}"
+data-signin-url="{{ url_for('public.signin') }}"
+data-require-display-name="{{ 'true' if display_name_required else 'false' }}"
+{% endblock %}
+
 {% block header %}
   {% include "partials/masthead.html" %}
 {% endblock %}
@@ -14,6 +23,11 @@
     <div class="team-panel__header">
       <h2>Account Settings</h2>
       <p>Update your display name or delete your account.</p>
+      {% if display_name_required %}
+        <p class="team-message team-message--error">
+          Set your display name before continuing.
+        </p>
+      {% endif %}
     </div>
 
     <form id="accountNameForm" class="team-form">

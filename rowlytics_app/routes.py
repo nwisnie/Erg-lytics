@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Iterable
 from urllib import parse
+from uuid import UUID
 
 from flask import (
     Blueprint,
@@ -20,11 +21,12 @@ from flask import (
 
 from rowlytics_app.auth.cognito import (
     build_cognito_login_url,
+    build_cognito_signup_url,
     decode_token_payload,
     exchange_code_for_tokens,
 )
 from rowlytics_app.auth.sessions import user_context
-from rowlytics_app.services.dynamodb import sync_user_profile
+from rowlytics_app.services.dynamodb import fetch_user_profile, sync_user_profile
 from rowlytics_app.services.metrics import publish_login_latency
 from rowlytics_app.services.mock_email import send_mock_auto_email
 
@@ -113,6 +115,35 @@ def _get_card(slug: str) -> TemplateCard | None:
     return next((card for card in TEMPLATE_CARDS if card.slug == slug), None)
 
 
+def _looks_generated_display_name(
+    name: str | None,
+    *,
+    user_id: str | None = None,
+    username: str | None = None,
+) -> bool:
+    if not name:
+        return True
+
+    candidate = name.strip()
+    if not candidate:
+        return True
+
+    if candidate == "New Rower":
+        return True
+
+    if user_id and candidate == user_id:
+        return True
+
+    if username and candidate == username:
+        return True
+
+    try:
+        UUID(candidate)
+        return True
+    except ValueError:
+        return False
+
+
 @public_bp.route("/")
 def landing_page() -> str:
     return render_template("index.html", cards=TEMPLATE_CARDS, **user_context())
@@ -142,7 +173,11 @@ def profile() -> str:
 
 @public_bp.route("/settings")
 def settings() -> str:
-    return render_template("settings.html", **user_context())
+    return render_template(
+        "settings.html",
+        display_name_required=request.args.get("require_display_name") == "1",
+        **user_context(),
+    )
 
 
 @public_bp.route("/signin")
@@ -150,7 +185,8 @@ def signin() -> str:
     if session.get("user_id"):
         return redirect(url_for("public.landing_page"))
     login_url = build_cognito_login_url()
-    return render_template("sign_in.html", login_url=login_url)
+    signup_url = build_cognito_signup_url()
+    return render_template("sign_in.html", login_url=login_url, signup_url=signup_url)
 
 
 @public_bp.route("/auth/callback")
@@ -160,6 +196,7 @@ def auth_callback() -> str:
     if not code:
         return render_template("sign_in.html",
                                login_url=build_cognito_login_url(),
+                               signup_url=build_cognito_signup_url(),
                                error="Missing auth code."), 400
     try:
         tokens = exchange_code_for_tokens(code)
@@ -167,6 +204,7 @@ def auth_callback() -> str:
         return render_template(
             "sign_in.html",
             login_url=build_cognito_login_url(),
+            signup_url=build_cognito_signup_url(),
             error=f"Auth failed: {err}",
         ), 400
 
@@ -175,15 +213,22 @@ def auth_callback() -> str:
         return render_template(
             "sign_in.html",
             login_url=build_cognito_login_url(),
+            signup_url=build_cognito_signup_url(),
             error="Missing ID token from Cognito.",
         ), 400
 
     payload = decode_token_payload(id_token)
+    raw_name = (payload.get("name") or "").strip() or None
+    raw_username = (payload.get("cognito:username") or "").strip() or None
+    user_id = payload.get("sub")
+    existing_profile = fetch_user_profile(user_id)
+    existing_name = (existing_profile.get("name") or "").strip() or None
+
     session["id_token"] = id_token
     session["access_token"] = tokens.get("access_token")
-    session["user_id"] = payload.get("sub")
+    session["user_id"] = user_id
     session["user_email"] = payload.get("email")
-    session["user_name"] = payload.get("name") or payload.get("cognito:username")
+    session["user_name"] = raw_name or existing_name or raw_username
 
     end = time.perf_counter()
     latency = (end - start) * 1000
@@ -195,10 +240,17 @@ def auth_callback() -> str:
     stored_name = sync_user_profile(
         session.get("user_id"),
         session.get("user_email"),
-        session.get("user_name"),
+        raw_name,
     )
     if stored_name:
         session["user_name"] = stored_name
+
+    if _looks_generated_display_name(
+        stored_name,
+        user_id=session.get("user_id"),
+        username=raw_username,
+    ):
+        return redirect(url_for("public.settings", require_display_name="1"))
 
     return redirect(url_for("public.landing_page"))
 
