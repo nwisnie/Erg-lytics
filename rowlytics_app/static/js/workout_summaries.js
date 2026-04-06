@@ -74,7 +74,9 @@
   const getWorkoutMetrics = (workout) => {
     const parsedDetails = parseAlignmentDetails(workout.alignmentDetails);
     return {
-      score: asNumber(workout.workoutScore) ?? asNumber(parsedDetails.score),
+      score: asNumber(workout.workoutScore)
+        ?? asNumber(parsedDetails["consistency score"])
+        ?? asNumber(parsedDetails.score),
       summary: workout.summary || parsedDetails.summary || "No summary provided.",
       strokeCount: asNumber(workout.strokeCount) ?? asNumber(parsedDetails["stroke count"]),
       cadenceSpm: asNumber(workout.cadenceSpm) ?? asNumber(parsedDetails["cadence (spm)"]),
@@ -139,14 +141,14 @@
       score.className = "workout-card__score";
       if (metrics.score == null) {
         score.classList.add("workout-card__score--missing");
-        score.textContent = "Score unavailable";
+        score.textContent = "Consistency score unavailable";
       } else {
         score.classList.add("workout-card__score--ok");
-        score.textContent = `${Math.round(metrics.score)}% alignment`;
+        score.textContent = `${Math.round(metrics.score)}% consistency`;
       }
 
       summary.textContent = metrics.score == null
-        ? "Score could not be calculated because not enough strokes were taken."
+        ? "Consistency score could not be calculated because not enough strokes were taken."
         : metrics.summary;
 
       const metricList = document.createElement("div");
