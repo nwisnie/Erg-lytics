@@ -21,6 +21,7 @@ from rowlytics_app.cv.feature_extraction.angles import normalized_joint_angle
 from rowlytics_app.services.dynamodb import (
     fetch_team_members,
     fetch_team_members_page,
+    fetch_user_profile,
     get_ddb_tables,
     get_recordings_table,
     get_team,
@@ -83,6 +84,7 @@ ALIGNMENT_ANCHOR_CANDIDATES = (
     "right_elbow",
     "nose",
 )
+# Current movement analysis assumes the user is captured primarily from one side.
 SIDE_PROFILE_LANDMARKS = {
     "left": (
         "left_shoulder",
@@ -101,6 +103,9 @@ SIDE_PROFILE_LANDMARKS = {
         "right_ankle",
     ),
 }
+# Landmarks below this visibility threshold are ignored.
+# This means lighting, clothing, body occlusion, camera quality, and framing
+# can disproportionately reduce usable data and degrade scoring reliability.
 MIN_VISIBILITY_FOR_ANALYSIS = 0.12
 MIN_STROKES_REQUIRED = 3
 MIN_RANGE_OF_MOTION = 0.12
@@ -191,6 +196,9 @@ def _smooth_coordinates(coordinates, alpha=0.35):
     return sorted(smoothed, key=lambda item: (item["time"], item["name"]))
 
 
+# Note: this heuristic picks the side with more detected landmarks, which works best
+# for a clean side-profile recording. It is less reliable for diagonal camera angles,
+# mirrored views, or partial visibility.
 def _detect_dominant_side(coordinates):
     counts = {}
     for side_name, landmark_names in SIDE_PROFILE_LANDMARKS.items():
@@ -267,6 +275,10 @@ def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
         return None
 
 
+# Motion features are currently derived from upper-body landmark relationships.
+# This assumes the selected landmarks are visible and representative across users.
+# Differences in body proportions, adaptive rowing form, mobility limitations,
+# or non-standard technique may affect how well the current model generalizes.
 def _extract_motion_series_candidates(coordinates, dominant_side):
     wrist_name = f"{dominant_side}_wrist"
     elbow_name = f"{dominant_side}_elbow"
@@ -1121,6 +1133,32 @@ def update_account_name():
 
     session["user_name"] = name
     return jsonify({"status": "ok", "name": name})
+
+
+@api_bp.route("/account/profile", methods=["GET"])
+def get_account_profile():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        profile = fetch_user_profile(user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load account profile", "detail": str(err)}), 500
+
+    current_name = profile.get("name") or session.get("user_name")
+    current_email = profile.get("email") or session.get("user_email")
+
+    if current_name:
+        session["user_name"] = current_name
+    if current_email:
+        session["user_email"] = current_email
+
+    return jsonify({
+        "userId": user_id,
+        "name": current_name,
+        "email": current_email,
+    })
 
 
 @api_bp.route("/account/delete", methods=["POST"])
