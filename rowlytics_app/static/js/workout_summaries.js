@@ -140,8 +140,6 @@
       header.appendChild(title);
       header.appendChild(duration);
 
-      const summary = document.createElement("p");
-      summary.className = "workout-card__summary";
       const metrics = getWorkoutMetrics(workout);
 
       const score = document.createElement("p");
@@ -154,40 +152,13 @@
         score.textContent = `${Math.round(metrics.score)}% consistency`;
       }
 
-      summary.textContent = metrics.score == null
-        ? "Consistency score could not be calculated because not enough strokes were taken."
-        : metrics.summary;
-
-      const metricList = document.createElement("div");
-      metricList.className = "workout-card__metrics";
-      metricList.appendChild(buildMetricRow(
-        "Stroke count",
-        metrics.strokeCount == null ? "Not detected" : String(metrics.strokeCount),
-      ));
-      metricList.appendChild(buildMetricRow(
-        "Cadence",
-        metrics.cadenceSpm == null ? "Not available" : `${metrics.cadenceSpm.toFixed(1)} spm`,
-      ));
-      metricList.appendChild(buildMetricRow(
-        "Range of motion",
-        metrics.rangeOfMotion == null ? "Not available" : metrics.rangeOfMotion.toFixed(3),
-      ));
-
-      if (metrics.dominantSide) {
-        metricList.appendChild(buildMetricRow("Dominant side", metrics.dominantSide, true));
-      }
-      if (metrics.signalStrategy) {
-        metricList.appendChild(buildMetricRow(
-          "Signal",
-          metrics.signalStrategy.replaceAll("_", " "),
-          true,
-        ));
-      }
+      const preview = document.createElement("p");
+      preview.className = "workout-card__summary";
+      preview.textContent = "Click to view full workout summary →";
 
       card.appendChild(header);
       card.appendChild(score);
-      card.appendChild(summary);
-      card.appendChild(metricList);
+      card.appendChild(preview);
       grid.appendChild(card);
     });
   };

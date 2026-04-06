@@ -17,10 +17,6 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
 <main class="page page-pad">
   <div class="container container--wide stack">
     <section class="recordings-panel">
-      <a href="{{ url_for('public.template_detail', slug='workout-summaries') }}" class="btn btn--subtle">
-        Back to Workout Summaries
-      </a>
-
       <div id="workoutDetail"></div>
       <p id="workoutDetailMessage" class="recordings-message" aria-live="polite"></p>
     </section>
