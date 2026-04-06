@@ -19,6 +19,7 @@ from rowlytics_app.auth.cognito import delete_cognito_user
 from rowlytics_app.cv.alignment import PracticeStrokeAssembler
 from rowlytics_app.cv.feature_extraction.angles import normalized_joint_angle
 from rowlytics_app.services.dynamodb import (
+    display_name_exists,
     fetch_team_members,
     fetch_team_members_page,
     fetch_user_profile,
@@ -32,6 +33,7 @@ from rowlytics_app.services.dynamodb import (
     list_recordings_page,
     list_team_memberships,
     list_workouts_page,
+    normalize_display_name,
     now_iso,
     team_name_exists,
 )
@@ -1112,9 +1114,19 @@ def update_account_name():
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
-    update_expr = "SET #name = :name, updatedAt = :updatedAt"
+    try:
+        if display_name_exists(users_table, name, excluding_user_id=user_id):
+            return jsonify({"error": "Display name already in use"}), 409
+    except Exception as err:
+        return jsonify({"error": "Unable to check display name", "detail": str(err)}), 500
+
+    update_expr = "SET #name = :name, nameKey = :nameKey, updatedAt = :updatedAt"
     expr_attr_names = {"#name": "name"}
-    expr_attr_values = {":name": name, ":updatedAt": now_iso()}
+    expr_attr_values = {
+        ":name": name,
+        ":nameKey": normalize_display_name(name),
+        ":updatedAt": now_iso(),
+    }
 
     user_email = session.get("user_email")
     if user_email:
@@ -1132,6 +1144,7 @@ def update_account_name():
         return jsonify({"error": "Unable to update name", "detail": str(err)}), 500
 
     session["user_name"] = name
+    session["display_name_required"] = False
     return jsonify({"status": "ok", "name": name})
 
 
