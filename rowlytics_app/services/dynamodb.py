@@ -77,6 +77,16 @@ def get_workouts_table():
     return _get_resource().Table(WORKOUTS_TABLE_NAME)
 
 
+def get_workout_for_user(workouts_table, user_id: str, workout_id: str):
+    response = workouts_table.get_item(
+        Key={
+            "userId": user_id,
+            "workoutId": workout_id,
+        }
+    )
+    return response.get("Item")
+
+
 def get_ddb_tables():
     return get_users_table(), get_team_members_table()
 

@@ -1171,7 +1171,12 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
     if (!response.ok) {
       throw new Error(payload.error || "Unable to save workout");
     }
+    const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
     poseStatus.textContent = "Workout saved";
+    setTimeout(() => {
+      window.location.href = `${basePath}/workout-summaries/${payload.workoutId}`;
+    }, 500);
+
   } catch (err) {
     console.warn("Workout not saved:", err);
     poseStatus.textContent = "Workout ended (not saved)";

@@ -27,6 +27,7 @@ from rowlytics_app.services.dynamodb import (
     get_team,
     get_team_membership,
     get_teams_table,
+    get_workout_for_user,
     get_workouts_table,
     list_recordings,
     list_recordings_page,
@@ -1497,6 +1498,31 @@ def list_workouts_for_current_user():
         "userId": user_id,
         "workouts": items,
         "nextCursor": _encode_cursor(next_key),
+    })
+
+
+@api_bp.route("/workouts/<workout_id>", methods=["GET"])
+def get_workout_for_current_user(workout_id):
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        workout = get_workout_for_user(workouts_table, user_id, workout_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load workout", "detail": str(err)}), 500
+
+    if not workout:
+        return jsonify({"error": "Workout not found"}), 404
+
+    return jsonify({
+        "userId": user_id,
+        "workout": workout,
     })
 
 
