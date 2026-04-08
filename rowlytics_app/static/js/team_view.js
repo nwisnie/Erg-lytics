@@ -217,9 +217,9 @@
       return;
     }
 
-    const userId = memberUserId.value.trim();
-    if (!userId) {
-      setMessage("Enter a user ID to add.", "error");
+    const userLookup = memberUserId.value.trim();
+    if (!userLookup) {
+      setMessage("Enter a display name or user ID to add.", "error");
       return;
     }
 
@@ -229,7 +229,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
+          userLookup,
           memberRole: memberRole.value,
           joinedAt: new Date().toISOString(),
         }),
