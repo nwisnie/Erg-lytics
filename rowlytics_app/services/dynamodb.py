@@ -6,6 +6,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from rowlytics_app.models.users import canonicalize_display_name, normalize_display_name
+
 try:
     import boto3
     from boto3.dynamodb.conditions import Attr, Key
@@ -19,6 +21,7 @@ except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
 logger = logging.getLogger(__name__)
 
 USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
+USERS_NAME_INDEX = os.getenv("ROWLYTICS_USERS_NAME_INDEX", "NameKeyIndex")
 TEAMS_TABLE_NAME = os.getenv("ROWLYTICS_TEAMS_TABLE", "RowlyticsTeams")
 TEAM_MEMBERS_TABLE_NAME = os.getenv("ROWLYTICS_TEAM_MEMBERS_TABLE", "RowlyticsTeamMembers")
 TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserIdIndex")
@@ -106,15 +109,21 @@ def sync_user_profile(user_id: str | None, email: str | None, name: str | None) 
         return name
     table = get_users_table()
 
-    safe_name = name or "New Rower"
+    safe_name = canonicalize_display_name(name) or "New Rower"
+    name_key = normalize_display_name(safe_name)
     now = now_iso()
 
     update_expr = (
         "SET #name = if_not_exists(#name, :name), "
+        "nameKey = if_not_exists(nameKey, :nameKey), "
         "createdAt = if_not_exists(createdAt, :createdAt)"
     )
     expr_attr_names = {"#name": "name"}
-    expr_attr_values = {":name": safe_name, ":createdAt": now}
+    expr_attr_values = {
+        ":name": safe_name,
+        ":nameKey": name_key,
+        ":createdAt": now,
+    }
 
     if email:
         update_expr += ", email = if_not_exists(email, :email)"
@@ -513,3 +522,45 @@ def team_name_exists(teams_table, team_name: str) -> bool:
         Limit=1,
     )
     return bool(response.get("Items"))
+
+
+def display_name_exists(
+    users_table,
+    display_name: str,
+    *,
+    excluding_user_id: str | None = None,
+) -> bool:
+    normalized_name = normalize_display_name(display_name)
+    if not normalized_name:
+        return False
+
+    if Attr is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+
+    try:
+        response = users_table.query(
+            IndexName=USERS_NAME_INDEX,
+            KeyConditionExpression=Key("nameKey").eq(normalized_name),
+            Limit=5,
+        )
+        for item in response.get("Items", []):
+            if item.get("userId") != excluding_user_id:
+                return True
+        if response.get("Items"):
+            return False
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    for item in scan_all(users_table):
+        if item.get("userId") == excluding_user_id:
+            continue
+        if normalize_display_name(item.get("name")) == normalized_name:
+            return True
+        if item.get("nameKey") == normalized_name:
+            return True
+    return False
