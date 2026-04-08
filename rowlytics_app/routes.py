@@ -171,6 +171,11 @@ def profile() -> str:
     return render_template("profile.html", **user_context())
 
 
+@public_bp.route("/help")
+def help_page() -> str:
+    return render_template("help.html", **user_context())
+
+
 @public_bp.route("/settings")
 def settings() -> str:
     return render_template(

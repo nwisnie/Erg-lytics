@@ -5,6 +5,7 @@
   const message = document.getElementById("workoutsMessage");
   const loadMoreBtn = document.getElementById("workoutsLoadMore");
   const userId = document.body?.dataset?.userId;
+  const workoutDetailBase = document.body?.dataset?.workoutDetailBase || "";
 
   if (!grid || !message) return;
 
@@ -125,8 +126,8 @@
       card.style.cursor = "pointer";
 
       card.addEventListener("click", () => {
-        const basePath = window.location.pathname.split("/").slice(0, 2).join("/");
-        window.location.href = `${basePath}/workout-summaries/${workout.workoutId}`;
+        const detailUrl = workoutDetailBase.replace("__WORKOUT_ID__", workout.workoutId);
+        window.location.href = detailUrl || `/workout-summaries/${workout.workoutId}`;
       });
 
       const header = document.createElement("div");
