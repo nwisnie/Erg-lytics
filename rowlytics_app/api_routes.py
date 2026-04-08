@@ -26,12 +26,14 @@ from rowlytics_app.services.dynamodb import (
     get_ddb_tables,
     get_recordings_table,
     get_team,
+    get_team_by_name,
     get_team_membership,
     get_teams_table,
     get_workout_for_user,
     get_workouts_table,
     list_recordings,
     list_recordings_page,
+    list_team_members_by_team,
     list_team_memberships,
     list_workouts_page,
     normalize_display_name,
@@ -867,6 +869,7 @@ def current_team():
 
     try:
         users_table, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
     except RuntimeError as err:
         logger.error(f"GET /team/current: DynamoDB tables not available: {err}")
         return jsonify({"error": str(err)}), 500
@@ -884,6 +887,12 @@ def current_team():
 
     team_id = membership.get("teamId")
     logger.debug(f"GET /team/current: user {user_id} is on team {team_id}")
+
+    try:
+        team = get_team(teams_table, team_id)
+    except Exception as err:
+        logger.error(f"GET /team/current: failed to load team metadata: {err}", exc_info=True)
+        return jsonify({"error": "Unable to load team", "detail": str(err)}), 500
 
     try:
         members, next_key = fetch_team_members_page(
@@ -905,6 +914,7 @@ def current_team():
 
     return jsonify({
         "teamId": team_id,
+        "teamName": (team or {}).get("teamName"),
         "members": members,
         "memberRole": membership.get("memberRole"),
         "nextCursor": _encode_cursor(next_key),
@@ -918,9 +928,9 @@ def join_team():
         return jsonify({"error": "authentication required"}), 401
 
     data = request.get_json(silent=True) or {}
-    team_id = (data.get("teamId") or "").strip()
-    if not team_id:
-        return jsonify({"error": "teamId is required"}), 400
+    team_name = (data.get("teamName") or "").strip()
+    if not team_name:
+        return jsonify({"error": "teamName is required"}), 400
 
     member_role = (data.get("memberRole") or "rower").strip().lower()
     if member_role not in ALLOWED_TEAM_ROLES:
@@ -934,9 +944,10 @@ def join_team():
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
-    team_item = get_team(teams_table, team_id)
+    team_item = get_team_by_name(teams_table, team_name)
     if not team_item:
         return jsonify({"error": "Team not found"}), 404
+    team_id = team_item.get("teamId")
 
     try:
         existing = get_team_membership(team_members_table, user_id)
@@ -1086,6 +1097,7 @@ def leave_team():
 
     try:
         _, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
@@ -1099,11 +1111,26 @@ def leave_team():
 
     team_id = membership.get("teamId")
     try:
+        team_members = list_team_members_by_team(team_members_table, team_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to inspect team members", "detail": str(err)}), 500
+
+    deleted_team = len(team_members) <= 1
+    try:
         team_members_table.delete_item(Key={"teamId": team_id, "userId": user_id})
     except Exception as err:
         return jsonify({"error": "Unable to leave team", "detail": str(err)}), 500
 
-    return jsonify({"status": "ok", "teamId": team_id})
+    if deleted_team:
+        try:
+            teams_table.delete_item(Key={"teamId": team_id})
+        except Exception as err:
+            return jsonify({
+                "error": "Left team but failed to delete empty team",
+                "detail": str(err),
+            }), 500
+
+    return jsonify({"status": "ok", "teamId": team_id, "deletedTeam": deleted_team})
 
 
 @api_bp.route("/account/name", methods=["POST"])
