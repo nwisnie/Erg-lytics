@@ -78,3 +78,14 @@ def test_cognito_login_url_integration() -> None:
     assert query["client_id"] == ["client123"]
     assert query["response_type"] == ["code"]
     assert query["redirect_uri"] == ["https://app.example.com/callback"]
+
+
+def test_signin_route_renders(client: FlaskClient) -> None:
+    response = client.get("/signin")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Login" in html
+
+def test_static_css_loads(client: FlaskClient) -> None:
+    response = client.get("/static/css/styles.css")
+    assert response.status_code == 200
