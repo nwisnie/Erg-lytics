@@ -29,6 +29,7 @@
   }
 
   let currentTeamId = null;
+  let currentTeamName = null;
   let nextMembersCursor = null;
   let members = [];
   let loadingMembers = false;
@@ -82,17 +83,19 @@
     activeSection.classList.add("team-panel__section--hidden");
     teamStatus.textContent = "You're not on a team yet.";
     currentTeamId = null;
+    currentTeamName = null;
     members = [];
     renderMembers();
     setLoadMoreState(null);
   };
 
-  const showActive = (teamId, incomingMembers, nextCursor, append) => {
+  const showActive = (teamId, teamName, incomingMembers, nextCursor, append) => {
     joinSection.classList.add("team-panel__section--hidden");
     activeSection.classList.remove("team-panel__section--hidden");
     teamStatus.textContent = "You're on a team.";
-    teamIdDisplay.textContent = `Team ID: ${teamId}`;
+    teamIdDisplay.textContent = teamName ? `Team name: ${teamName}` : `Team ID: ${teamId}`;
     currentTeamId = teamId;
+    currentTeamName = teamName || null;
     members = append ? members.concat(incomingMembers) : incomingMembers;
     renderMembers();
     setLoadMoreState(nextCursor);
@@ -126,7 +129,7 @@
         return;
       }
 
-      showActive(data.teamId, data.members || [], data.nextCursor, append);
+      showActive(data.teamId, data.teamName, data.members || [], data.nextCursor, append);
     } catch (err) {
       if (!append) {
         showJoin();
@@ -140,9 +143,9 @@
 
   joinForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const teamId = joinInput.value.trim();
-    if (!teamId) {
-      setMessage("Enter a team ID to join.", "error");
+    const teamName = joinInput.value.trim();
+    if (!teamName) {
+      setMessage("Enter a team name to join.", "error");
       return;
     }
 
@@ -151,7 +154,7 @@
       const response = await fetch(getApiUrl("/api/team/join"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId }),
+        body: JSON.stringify({ teamName }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -186,7 +189,7 @@
           throw new Error(data.error || "Unable to create team");
         }
         createInput.value = "";
-        setMessage("Team created. Share the Team ID to invite members.", "success");
+        setMessage("Team created. Share the team name to invite members.", "success");
         await loadCurrentTeam();
       } catch (err) {
         setMessage(err.message || "Unable to create team", "error");
@@ -196,6 +199,15 @@
 
   teamLeaveBtn.addEventListener("click", async () => {
     if (!currentTeamId) return;
+    const leavingDeletesTeam = members.length === 1 && !nextMembersCursor;
+    if (leavingDeletesTeam) {
+      const confirmed = window.confirm(
+        `You are the last member of ${currentTeamName || "this team"}. Leaving will delete the team. Continue?`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
     setMessage("Leaving team...", "info");
     try {
       const response = await fetch(getApiUrl("/api/team/leave"), { method: "DELETE" });
@@ -203,7 +215,7 @@
       if (!response.ok) {
         throw new Error(data.error || "Unable to leave team");
       }
-      setMessage("Left team.", "success");
+      setMessage(data.deletedTeam ? "Left team. The empty team was deleted." : "Left team.", "success");
       showJoin();
     } catch (err) {
       setMessage(err.message || "Unable to leave team", "error");
@@ -217,9 +229,9 @@
       return;
     }
 
-    const userId = memberUserId.value.trim();
-    if (!userId) {
-      setMessage("Enter a user ID to add.", "error");
+    const userLookup = memberUserId.value.trim();
+    if (!userLookup) {
+      setMessage("Enter a display name or user ID to add.", "error");
       return;
     }
 
@@ -229,7 +241,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId,
+          userLookup,
           memberRole: memberRole.value,
           joinedAt: new Date().toISOString(),
         }),

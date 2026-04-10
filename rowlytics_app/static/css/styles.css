@@ -417,29 +417,46 @@ body {
   box-shadow: var(--btn-hover-shadow);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .quadrant {
     flex-direction: column;
     text-align: center;
+    height: 100%;
+    gap: 0.75rem;
+    padding: 1rem 0.9rem;
   }
 
   .quadrant img {
-    width: min(240px, 80%);
+    width: min(120px, 52%);
     height: auto;
   }
 
   .quadrant__copy {
     align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+    gap: 0.65rem;
   }
 
   .quadrant__copy .btn {
     align-self: center;
+    width: 100%;
+    text-align: center;
+    padding: 0.65rem 0.9rem;
   }
 }
 
 @media (max-width: 1100px) {
   .quadrants {
+    flex: 0 0 auto;
     grid-template-columns: repeat(2, minmax(280px, 1fr));
+    align-content: start;
+    align-items: stretch;
+    grid-auto-rows: 1fr;
+  }
+
+  .quadrant {
+    align-self: stretch;
   }
 }
 

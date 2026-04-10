@@ -524,6 +524,37 @@ def team_name_exists(teams_table, team_name: str) -> bool:
     return bool(response.get("Items"))
 
 
+def get_team_by_name(teams_table, team_name: str) -> dict | None:
+    if not team_name:
+        return None
+
+    if Attr is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+
+    try:
+        response = teams_table.query(
+            IndexName=TEAM_NAME_INDEX,
+            KeyConditionExpression=Key("teamName").eq(team_name),
+            Limit=1,
+        )
+        items = response.get("Items") or []
+        if items:
+            return items[0]
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    items = scan_all(
+        teams_table,
+        FilterExpression=Attr("teamName").eq(team_name),
+    )
+    return items[0] if items else None
+
+
 def display_name_exists(
     users_table,
     display_name: str,
@@ -564,3 +595,59 @@ def display_name_exists(
         if item.get("nameKey") == normalized_name:
             return True
     return False
+
+
+def resolve_user_by_identifier(users_table, identifier: str) -> dict | None:
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return None
+
+    try:
+        response = users_table.get_item(Key={"userId": identifier})
+    except Exception:
+        raise
+
+    item = response.get("Item")
+    if item:
+        return item
+
+    normalized_name = normalize_display_name(identifier)
+    if not normalized_name:
+        return None
+
+    matches = []
+    try:
+        response = users_table.query(
+            IndexName=USERS_NAME_INDEX,
+            KeyConditionExpression=Key("nameKey").eq(normalized_name),
+            Limit=10,
+        )
+        matches = response.get("Items", [])
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    if not matches:
+        matches = [
+            item
+            for item in scan_all(users_table)
+            if (
+                item.get("nameKey") == normalized_name
+                or normalize_display_name(item.get("name")) == normalized_name
+            )
+        ]
+
+    unique_matches = {
+        item.get("userId"): item
+        for item in matches
+        if item.get("userId")
+    }
+    if not unique_matches:
+        return None
+    if len(unique_matches) > 1:
+        raise ValueError("Multiple users found with that display name. Use a user ID instead.")
+    return next(iter(unique_matches.values()))
