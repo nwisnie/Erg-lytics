@@ -18,15 +18,15 @@
 
         <section id="teamJoinSection" class="team-panel__section">
           <h3>Join a team</h3>
-          <p class="team-panel__hint">Enter a team ID to get started.</p>
+          <p class="team-panel__hint">Enter a team name to get started.</p>
           <form id="teamJoinForm" class="team-form">
-            <label class="team-form__label" for="teamJoinId">Team ID</label>
+            <label class="team-form__label" for="teamJoinId">Team name</label>
             <div class="team-form__row">
               <input
                 id="teamJoinId"
                 class="team-form__input"
                 type="text"
-                placeholder="team-1234"
+                placeholder="Erglytics Varsity"
                 required
               />
               <button class="btn" type="submit">Join team</button>
@@ -34,7 +34,7 @@
           </form>
 
           <h3>Create a team</h3>
-          <p class="team-panel__hint">Pick a name and we will generate a Team ID.</p>
+          <p class="team-panel__hint">Pick a unique team name that others can use to join.</p>
           <form id="teamCreateForm" class="team-form">
             <label class="team-form__label" for="teamCreateName">Team name</label>
             <div class="team-form__row">
@@ -71,12 +71,12 @@
 
           <h3>Add Member</h3>
           <form id="teamAddForm" class="team-form">
-            <label class="team-form__label" for="memberUserId">User ID</label>
+            <label class="team-form__label" for="memberUserId">Display Name or User ID</label>
             <input
               id="memberUserId"
               class="team-form__input"
               type="text"
-              placeholder="cognito-sub-uuid"
+              placeholder="Display name or user ID"
               required
             />
 
