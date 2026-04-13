@@ -7,6 +7,14 @@
   const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
   const userId = document.body?.dataset?.userId;
   const loadMoreBtn = document.getElementById("recordingsLoadMoreBtn");
+  const capturedFromWorkout = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      return params.get("captured") === "1";
+    } catch (err) {
+      return false;
+    }
+  })();
 
   if (!container || !message || !workoutId || !userId) {
     return;
@@ -290,13 +298,26 @@
         </div>
       `;
 
-      setMessage("");
+       message.classList.remove(
+    "recordings-message--error",
+    "recordings-message--success"
+       );
 
+      if (capturedFromWorkout) {
+      setMessage("Workout successfully captured.", "success");
+    } else {
+      setMessage("");
+    }
+
+    try {
       await loadRecordings();
     } catch (err) {
-      setMessage(err.message || "Unable to load workout", "error");
-    }
-  };
+        setMessage(err.message || "Unable to load workout", "error");
+      }
+  } catch (err) {
+    setMessage(err.message || "An error occurred", "error");
+  }
+};
 
   loadWorkout();
 })();

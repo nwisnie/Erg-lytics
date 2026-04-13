@@ -1149,7 +1149,7 @@ async function recordClip() {
 }
 
 async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId = null) {
-  console.log('after save',workoutId);
+
   if (!apiBase) {
     console.warn("Workout not saved: missing apiBase");
     return;
@@ -1285,7 +1285,6 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
-    console.log('before save', workoutId)
     saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId);
   }
   workoutStartAt = null;
