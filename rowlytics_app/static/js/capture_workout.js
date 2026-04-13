@@ -2,6 +2,7 @@ import {
   FilesetResolver,
   PoseLandmarker
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304";
+import { v4 as uuidv4 } from "https://cdn.skypack.dev/uuid";
 
 const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
@@ -13,6 +14,7 @@ const viewport = document.querySelector(".capture__viewport");
 const placeholder = document.getElementById("capturePlaceholder");
 const captureSessionNotice = document.getElementById("captureSessionNotice");
 const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+let workoutId = null;
 const urlParams = (() => {
   try {
     return new URLSearchParams(window.location.search || "");
@@ -1006,7 +1008,9 @@ async function uploadRecording(blob, createdAt) {
     objectKey: presign.objectKey,
     contentType,
     durationSec: recordingDurationMs / 1000,
-    createdAt
+    createdAt,
+    workoutId
+
   });
 }
 
@@ -1144,7 +1148,8 @@ async function recordClip() {
   }, recordingDurationMs);
 }
 
-async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
+async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId = null) {
+  console.log('after save',workoutId);
   if (!apiBase) {
     console.warn("Workout not saved: missing apiBase");
     return;
@@ -1158,6 +1163,7 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
         durationSec,
         startedAt,
         completedAt,
+        workoutId: workoutId,
         summary: latestWorkoutAnalysis?.summary || fallbackSummary,
         workoutScore: latestWorkoutScore,
         alignmentDetails: latestWorkoutAnalysisText,
@@ -1279,12 +1285,14 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
-    saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
+    console.log('before save', workoutId)
+    saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId);
   }
   workoutStartAt = null;
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  workoutId = null;
   if (stopReason !== "time-limit") {
     updateCaptureSessionNotice();
   }
@@ -1469,7 +1477,7 @@ toggleBtn.addEventListener("click", async () => {
     stopCamera();
     return;
   }
-
+  workoutId = uuidv4();
   await startCamera();
 });
 

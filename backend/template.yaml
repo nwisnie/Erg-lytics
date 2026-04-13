@@ -168,10 +168,14 @@ Resources:
           AttributeType: S
         - AttributeName: createdAt
           AttributeType: S
+        - AttributeName: workoutId
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: recordingId
+          KeyType: RANGE
+        - AttributeName: workoutId
           KeyType: RANGE
       GlobalSecondaryIndexes:
         - IndexName: UserCreatedAtIndex
