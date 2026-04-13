@@ -15,10 +15,17 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
 
 {% block content %}
 <main class="page page-pad">
+  <div class="container container--wide" style="margin-bottom: 0.75rem;">
+    <p id="workoutDetailMessage" class="recordings-message" aria-live="polite"></p>
+  </div>
+  <div class="container container--wide" style="margin-bottom: 1rem;">
+    <a class="btn btn--subtle workout-detail__back" href="{{ url_for('public.template_detail', slug='workout-summaries') }}">
+      Back to Workout Summaries
+    </a>
+  </div>
   <div class="container container--wide stack">
     <section class="recordings-panel">
       <div id="workoutDetail"></div>
-      <p id="workoutDetailMessage" class="recordings-message" aria-live="polite"></p>
     </section>
   </div>
 </main>

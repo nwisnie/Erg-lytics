@@ -9,6 +9,11 @@ Parameters:
     ConstraintDescription: "Must be 1-63 chars of lowercase letters, numbers, or hyphens."
     Description: Globally unique prefix for the Cognito hosted UI domain.
 
+  CognitoHostedUiDomain:
+    Type: String
+    Default: auth.erglytics.com
+    Description: Domain used for Cognito Hosted UI login, signup, and token endpoints.
+
   AppBaseUrl:
     Type: String
     Default: https://xft207g10i.execute-api.us-east-2.amazonaws.com/Prod
@@ -96,6 +101,8 @@ Resources:
           AttributeType: S
         - AttributeName: email
           AttributeType: S
+        - AttributeName: nameKey
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
@@ -103,6 +110,12 @@ Resources:
         - IndexName: EmailIndex
           KeySchema:
             - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: NameKeyIndex
+          KeySchema:
+            - AttributeName: nameKey
               KeyType: HASH
           Projection:
             ProjectionType: ALL
@@ -319,7 +332,7 @@ Resources:
           ROWLYTICS_RECORDINGS_PAGE_SIZE: "8"
           ROWLYTICS_WORKOUTS_PAGE_SIZE: "8"
           ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucketName
-          ROWLYTICS_COGNITO_DOMAIN: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+          ROWLYTICS_COGNITO_DOMAIN: !Ref CognitoHostedUiDomain
           ROWLYTICS_COGNITO_CLIENT_ID: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
           ROWLYTICS_COGNITO_REDIRECT_URI: !Sub "${AppBaseUrl}/auth/callback"
           ROWLYTICS_COGNITO_LOGOUT_REDIRECT_URI: !Sub "${AppBaseUrl}/signin"
@@ -481,6 +494,6 @@ Outputs:
   UserPoolClientId:
     Value: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
   UserPoolDomain:
-    Value: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+    Value: !Ref CognitoHostedUiDomain
   RowlyticsApiUrl:
     Value: !Sub "https://${RowlyticsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
