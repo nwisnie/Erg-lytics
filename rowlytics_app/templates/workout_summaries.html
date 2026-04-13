@@ -7,6 +7,7 @@
 {% block body_attrs %}
 data-user-id="{{ user_id }}"
 data-api-base="{{ request.url_root.rstrip('/') }}"
+data-workout-detail-base="{{ url_for('public.workout_summary_detail', workout_id='__WORKOUT_ID__') }}"
 {% endblock %}
 
 {% block header %}

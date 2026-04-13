@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Choose Display Name | Erglytics{% endblock %}
+
+{% block body_class %}capture account-settings{% endblock %}
+
+{% block body_attrs %}
+data-api-base="{{ request.url_root.rstrip('/') }}"
+data-account-name-url="{{ url_for('api.update_account_name') }}"
+data-home-url="{{ url_for('public.landing_page') }}"
+data-signin-url="{{ url_for('public.signin') }}"
+data-require-display-name="true"
+{% endblock %}
+
+{% block content %}
+<main class="page page-pad">
+  <section class="team-panel team-panel--centered container stack">
+    <div class="team-panel__header">
+      <h2>Choose your display name</h2>
+      <p>Pick the name other athletes will see in Erglytics.</p>
+      <p class="team-message team-message--error">
+        This is required once before you continue.
+      </p>
+    </div>
+
+    <form id="accountNameForm" class="team-form">
+      <label class="team-form__label" for="accountName">Display name</label>
+      <div class="team-form__row">
+        <input
+          id="accountName"
+          class="team-form__input"
+          type="text"
+          name="name"
+          value=""
+          placeholder="Your display name"
+          required
+          autofocus
+        />
+        <button class="btn" type="submit">Continue</button>
+      </div>
+    </form>
+
+    <p id="accountMessage" class="team-message" aria-live="polite"></p>
+  </section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/settings.js') }}" defer></script>
+{% endblock %}

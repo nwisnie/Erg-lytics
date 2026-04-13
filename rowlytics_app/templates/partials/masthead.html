@@ -31,15 +31,6 @@
         </div>
       </div>
 
-      <button
-        class="icon-btn"
-        type="button"
-        aria-label="Back"
-        onclick="if (window.history.length > 1) { history.back(); } else { window.location.href='{{ url_for('public.landing_page') }}'; }"
-      >
-        <img class="icon-btn__img" src="{{ 'images/back_cool.png' | cloudfront_url }}" alt="" />
-      </button>
-
       <a class="icon-btn" href="{{ url_for('public.landing_page') }}" aria-label="Home">
         <img class="icon-btn__img" src="{{ 'images/home_coolV2.png' | cloudfront_url }}" alt="" />
       </a>
@@ -47,10 +38,6 @@
       {% if user_id %}
         <a class="icon-btn profile-link" href="{{ url_for('public.profile') }}" aria-label="Profile">
           <img class="icon-btn__img" src="{{ 'images/profile_cool.png' | cloudfront_url }}" alt="" />
-        </a>
-
-        <a class="icon-btn" href="{{ url_for('public.settings') }}" aria-label="Settings">
-          <img class="icon-btn__img" src="{{ 'images/settings_cool.png' | cloudfront_url }}" alt="" />
         </a>
       {% else %}
         <a class="icon-btn" href="{{ url_for('public.signin') }}" aria-label="Sign in">

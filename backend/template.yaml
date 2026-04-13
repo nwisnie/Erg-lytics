@@ -101,6 +101,8 @@ Resources:
           AttributeType: S
         - AttributeName: email
           AttributeType: S
+        - AttributeName: nameKey
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
@@ -108,6 +110,12 @@ Resources:
         - IndexName: EmailIndex
           KeySchema:
             - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: NameKeyIndex
+          KeySchema:
+            - AttributeName: nameKey
               KeyType: HASH
           Projection:
             ProjectionType: ALL

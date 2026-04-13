@@ -84,6 +84,11 @@ def create_app() -> Flask:
             return None
         if not session.get("user_id"):
             return redirect(url_for("public.signin"))
+        if (
+            session.get("display_name_required")
+            and request.endpoint != "public.display_name_setup"
+        ):
+            return redirect(url_for("public.display_name_setup"))
         return None
 
     app.register_blueprint(public_bp)
