@@ -157,9 +157,23 @@ def template_detail(slug: str) -> str:
     return render_template(card.template_name, card=card, **user_context())
 
 
+@public_bp.route("/workout-summaries/<workout_id>")
+def workout_summary_detail(workout_id: str) -> str:
+    return render_template(
+        "workout_summary_detail.html",
+        workout_id=workout_id,
+        **user_context(),
+    )
+
+
 @public_bp.route("/profile")
 def profile() -> str:
     return render_template("profile.html", **user_context())
+
+
+@public_bp.route("/help")
+def help_page() -> str:
+    return render_template("help.html", **user_context())
 
 
 @public_bp.route("/settings")
@@ -171,9 +185,18 @@ def settings() -> str:
     )
 
 
+@public_bp.route("/display-name")
+def display_name_setup() -> str:
+    if not session.get("display_name_required"):
+        return redirect(url_for("public.landing_page"))
+    return render_template("display_name_setup.html", **user_context())
+
+
 @public_bp.route("/signin")
 def signin() -> str:
     if session.get("user_id"):
+        if session.get("display_name_required"):
+            return redirect(url_for("public.display_name_setup"))
         return redirect(url_for("public.landing_page"))
     login_url = build_cognito_login_url()
     signup_url = build_cognito_signup_url()
@@ -236,12 +259,14 @@ def auth_callback() -> str:
     if stored_name:
         session["user_name"] = stored_name
 
-    if _looks_generated_display_name(
+    needs_display_name = _looks_generated_display_name(
         stored_name,
         user_id=session.get("user_id"),
         username=raw_username,
-    ):
-        return redirect(url_for("public.settings", require_display_name="1"))
+    )
+    session["display_name_required"] = needs_display_name
+    if needs_display_name:
+        return redirect(url_for("public.display_name_setup"))
 
     return redirect(url_for("public.landing_page"))
 

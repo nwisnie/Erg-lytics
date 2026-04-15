@@ -21,6 +21,11 @@ def test_now_iso_returns_timezone_aware_isoformat() -> None:
     assert ts.endswith("+00:00")
 
 
+def test_normalize_display_name_trims_and_casefolds() -> None:
+    assert dynamodb.normalize_display_name("  Rower Name  ") == "rower name"
+    assert dynamodb.normalize_display_name(None) == ""
+
+
 def test_get_resource_requires_boto3(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(dynamodb, "boto3", None)
     with pytest.raises(RuntimeError):
@@ -96,6 +101,7 @@ def test_sync_user_profile_updates_with_email_and_default_name(
     assert name == "Updated"
     update_expr = (
         "SET #name = if_not_exists(#name, :name), "
+        "nameKey = if_not_exists(nameKey, :nameKey), "
         "createdAt = if_not_exists(createdAt, :createdAt), "
         "email = if_not_exists(email, :email)"
     )
@@ -103,6 +109,7 @@ def test_sync_user_profile_updates_with_email_and_default_name(
     assert kwargs["Key"] == {"userId": "u1"}
     assert kwargs["UpdateExpression"] == update_expr
     assert kwargs["ExpressionAttributeValues"][":name"] == "New Rower"
+    assert kwargs["ExpressionAttributeValues"][":nameKey"] == "new rower"
     assert kwargs["ExpressionAttributeValues"][":email"] == "rower@example.com"
 
 
@@ -420,6 +427,89 @@ def test_team_name_exists_reraises_unexpected_client_error(monkeypatch: pytest.M
 
     with pytest.raises(ClientError):
         dynamodb.team_name_exists(teams_table, "T")
+
+
+def test_display_name_exists_returns_false_for_empty_name() -> None:
+    assert dynamodb.display_name_exists(MagicMock(), "") is False
+
+
+def test_display_name_exists_raises_when_attr_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dynamodb, "Attr", None)
+    with pytest.raises(RuntimeError):
+        dynamodb.display_name_exists(MagicMock(), "Rower")
+
+
+def test_display_name_exists_true_when_query_returns_other_user() -> None:
+    users_table = MagicMock()
+    users_table.query.return_value = {"Items": [{"userId": "u2", "name": "Rower"}]}
+
+    assert dynamodb.display_name_exists(users_table, "Rower", excluding_user_id="u1") is True
+
+
+def test_display_name_exists_false_when_query_only_returns_same_user() -> None:
+    users_table = MagicMock()
+    users_table.query.return_value = {"Items": [{"userId": "u1", "name": "Rower"}]}
+
+    assert dynamodb.display_name_exists(users_table, "Rower", excluding_user_id="u1") is False
+
+
+def test_display_name_exists_falls_back_to_scan_and_normalizes_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    users_table = MagicMock()
+    users_table.query.side_effect = make_client_error("ValidationException")
+    monkeypatch.setattr(
+        dynamodb,
+        "scan_all",
+        lambda *_args, **_kwargs: [
+            {"userId": "u2", "name": "ROWER NAME"},
+            {"userId": "u3", "nameKey": "other"},
+        ],
+    )
+
+    assert dynamodb.display_name_exists(users_table, "rower name", excluding_user_id="u1") is True
+
+
+def test_display_name_exists_reraises_unexpected_client_error() -> None:
+    users_table = MagicMock()
+    users_table.query.side_effect = make_client_error("AccessDenied")
+
+    with pytest.raises(ClientError):
+        dynamodb.display_name_exists(users_table, "Rower")
+
+
+def test_resolve_user_by_identifier_returns_direct_user_id_match() -> None:
+    users_table = MagicMock()
+    users_table.get_item.return_value = {"Item": {"userId": "u1", "name": "Rower"}}
+
+    result = dynamodb.resolve_user_by_identifier(users_table, "u1")
+
+    assert result == {"userId": "u1", "name": "Rower"}
+    users_table.query.assert_not_called()
+
+
+def test_resolve_user_by_identifier_returns_display_name_match() -> None:
+    users_table = MagicMock()
+    users_table.get_item.return_value = {}
+    users_table.query.return_value = {"Items": [{"userId": "u2", "name": "Boat Mover"}]}
+
+    result = dynamodb.resolve_user_by_identifier(users_table, "Boat Mover")
+
+    assert result == {"userId": "u2", "name": "Boat Mover"}
+
+
+def test_resolve_user_by_identifier_raises_for_multiple_display_name_matches() -> None:
+    users_table = MagicMock()
+    users_table.get_item.return_value = {}
+    users_table.query.return_value = {
+        "Items": [
+            {"userId": "u2", "name": "Boat Mover"},
+            {"userId": "u3", "name": "Boat Mover"},
+        ]
+    }
+
+    with pytest.raises(ValueError):
+        dynamodb.resolve_user_by_identifier(users_table, "Boat Mover")
 
 
 def test_query_all_returns_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:

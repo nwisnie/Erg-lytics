@@ -13,6 +13,7 @@ const viewport = document.querySelector(".capture__viewport");
 const placeholder = document.getElementById("capturePlaceholder");
 const captureSessionNotice = document.getElementById("captureSessionNotice");
 const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+const workoutDetailBase = document.body?.dataset?.workoutDetailBase || "";
 const urlParams = (() => {
   try {
     return new URLSearchParams(window.location.search || "");
@@ -1177,6 +1178,14 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
       throw new Error(payload.error || "Unable to save workout");
     }
     poseStatus.textContent = "Workout saved";
+    setTimeout(() => {
+      const detailUrl = workoutDetailBase.replace("__WORKOUT_ID__", payload.workoutId);
+      const fallbackUrl = `/workout-summaries/${payload.workoutId}?captured=1`;
+      window.location.href = detailUrl
+        ? `${detailUrl}${detailUrl.includes("?") ? "&" : "?"}captured=1`
+        : fallbackUrl;
+    }, 500);
+
   } catch (err) {
     console.warn("Workout not saved:", err);
     poseStatus.textContent = "Workout ended (not saved)";

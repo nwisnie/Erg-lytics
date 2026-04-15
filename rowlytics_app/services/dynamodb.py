@@ -6,6 +6,8 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from rowlytics_app.models.users import canonicalize_display_name, normalize_display_name
+
 try:
     import boto3
     from boto3.dynamodb.conditions import Attr, Key
@@ -19,6 +21,7 @@ except ImportError:  # pragma: no cover - boto3 only needed when AWS is used
 logger = logging.getLogger(__name__)
 
 USERS_TABLE_NAME = os.getenv("ROWLYTICS_USERS_TABLE", "RowlyticsUsers")
+USERS_NAME_INDEX = os.getenv("ROWLYTICS_USERS_NAME_INDEX", "NameKeyIndex")
 TEAMS_TABLE_NAME = os.getenv("ROWLYTICS_TEAMS_TABLE", "RowlyticsTeams")
 TEAM_MEMBERS_TABLE_NAME = os.getenv("ROWLYTICS_TEAM_MEMBERS_TABLE", "RowlyticsTeamMembers")
 TEAM_MEMBERS_USER_INDEX = os.getenv("ROWLYTICS_TEAM_MEMBERS_USER_INDEX", "UserIdIndex")
@@ -108,6 +111,16 @@ def get_workouts_table():
     return _get_resource().Table(WORKOUTS_TABLE_NAME)
 
 
+def get_workout_for_user(workouts_table, user_id: str, workout_id: str):
+    response = workouts_table.get_item(
+        Key={
+            "userId": user_id,
+            "workoutId": workout_id,
+        }
+    )
+    return response.get("Item")
+
+
 def get_ddb_tables():
     return get_users_table(), get_team_members_table()
 
@@ -127,15 +140,21 @@ def sync_user_profile(user_id: str | None, email: str | None, name: str | None) 
         return name
     table = get_users_table()
 
-    safe_name = name or "New Rower"
+    safe_name = canonicalize_display_name(name) or "New Rower"
+    name_key = normalize_display_name(safe_name)
     now = now_iso()
 
     update_expr = (
         "SET #name = if_not_exists(#name, :name), "
+        "nameKey = if_not_exists(nameKey, :nameKey), "
         "createdAt = if_not_exists(createdAt, :createdAt)"
     )
     expr_attr_names = {"#name": "name"}
-    expr_attr_values = {":name": safe_name, ":createdAt": now}
+    expr_attr_values = {
+        ":name": safe_name,
+        ":nameKey": name_key,
+        ":createdAt": now,
+    }
 
     if email:
         update_expr += ", email = if_not_exists(email, :email)"
@@ -581,3 +600,132 @@ def team_name_exists(teams_table, team_name: str) -> bool:
         Limit=1,
     )
     return bool(response.get("Items"))
+
+
+def get_team_by_name(teams_table, team_name: str) -> dict | None:
+    if not team_name:
+        return None
+
+    if Attr is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+
+    try:
+        response = teams_table.query(
+            IndexName=TEAM_NAME_INDEX,
+            KeyConditionExpression=Key("teamName").eq(team_name),
+            Limit=1,
+        )
+        items = response.get("Items") or []
+        if items:
+            return items[0]
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    items = scan_all(
+        teams_table,
+        FilterExpression=Attr("teamName").eq(team_name),
+    )
+    return items[0] if items else None
+
+
+def display_name_exists(
+    users_table,
+    display_name: str,
+    *,
+    excluding_user_id: str | None = None,
+) -> bool:
+    normalized_name = normalize_display_name(display_name)
+    if not normalized_name:
+        return False
+
+    if Attr is None:
+        raise RuntimeError("boto3 is required for DynamoDB access")
+
+    try:
+        response = users_table.query(
+            IndexName=USERS_NAME_INDEX,
+            KeyConditionExpression=Key("nameKey").eq(normalized_name),
+            Limit=5,
+        )
+        for item in response.get("Items", []):
+            if item.get("userId") != excluding_user_id:
+                return True
+        if response.get("Items"):
+            return False
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    for item in scan_all(users_table):
+        if item.get("userId") == excluding_user_id:
+            continue
+        if normalize_display_name(item.get("name")) == normalized_name:
+            return True
+        if item.get("nameKey") == normalized_name:
+            return True
+    return False
+
+
+def resolve_user_by_identifier(users_table, identifier: str) -> dict | None:
+    identifier = (identifier or "").strip()
+    if not identifier:
+        return None
+
+    try:
+        response = users_table.get_item(Key={"userId": identifier})
+    except Exception:
+        raise
+
+    item = response.get("Item")
+    if item:
+        return item
+
+    normalized_name = normalize_display_name(identifier)
+    if not normalized_name:
+        return None
+
+    matches = []
+    try:
+        response = users_table.query(
+            IndexName=USERS_NAME_INDEX,
+            KeyConditionExpression=Key("nameKey").eq(normalized_name),
+            Limit=10,
+        )
+        matches = response.get("Items", [])
+    except Exception as err:
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+    if not matches:
+        matches = [
+            item
+            for item in scan_all(users_table)
+            if (
+                item.get("nameKey") == normalized_name
+                or normalize_display_name(item.get("name")) == normalized_name
+            )
+        ]
+
+    unique_matches = {
+        item.get("userId"): item
+        for item in matches
+        if item.get("userId")
+    }
+    if not unique_matches:
+        return None
+    if len(unique_matches) > 1:
+        raise ValueError("Multiple users found with that display name. Use a user ID instead.")
+    return next(iter(unique_matches.values()))
