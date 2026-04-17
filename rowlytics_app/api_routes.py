@@ -39,6 +39,7 @@ from rowlytics_app.services.dynamodb import (
     normalize_display_name,
     now_iso,
     resolve_user_by_identifier,
+    sum_recording_durations_for_utc_date,
     team_name_exists,
 )
 from rowlytics_app.services.s3 import UPLOAD_BUCKET_NAME, get_s3_client
@@ -126,6 +127,7 @@ ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
 MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
 MOTION_SPIKE_BASE_DELTA = 0.075
 MAX_WORKOUT_DURATION_SEC = 60 * 60
+MAX_DAILY_RECORDING_UPLOAD_SEC = 2 * 60 * 60
 
 
 class MovementGateError(ValueError):
@@ -139,6 +141,88 @@ def _coerce_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _coerce_positive_duration_seconds(value):
+    duration = _coerce_float(value)
+    if duration is None or duration <= 0:
+        return None
+    return int(round(duration))
+
+
+def _parse_iso_datetime(value):
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _normalize_event_timestamp(value):
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        parsed = datetime.now(timezone.utc)
+    return parsed.isoformat(), parsed
+
+
+def _resolve_recording_user_id(data):
+    requested_user_id = (data.get("userId") or "").strip()
+    session_user_id = (session.get("user_id") or "").strip()
+
+    if session_user_id:
+        if requested_user_id and requested_user_id != session_user_id:
+            logger.warning(
+                "Recording request userId %s did not match session user %s; using session user",
+                requested_user_id,
+                session_user_id,
+            )
+        return session_user_id
+    return requested_user_id
+
+
+def _recording_upload_limit_payload(uploaded_today_sec, requested_duration_sec, upload_date):
+    remaining_today_sec = max(MAX_DAILY_RECORDING_UPLOAD_SEC - uploaded_today_sec, 0)
+    return {
+        "error": "Daily recording upload limit of 2 hours exceeded",
+        "uploadDate": upload_date,
+        "maxDailyUploadDurationSec": MAX_DAILY_RECORDING_UPLOAD_SEC,
+        "uploadedTodaySec": uploaded_today_sec,
+        "requestedDurationSec": requested_duration_sec,
+        "remainingTodaySec": remaining_today_sec,
+    }
+
+
+def _check_daily_recording_upload_limit(
+    recordings_table,
+    user_id,
+    created_at_dt,
+    requested_duration_sec,
+):
+    upload_date = created_at_dt.date().isoformat()
+    uploaded_today_sec = sum_recording_durations_for_utc_date(
+        recordings_table,
+        user_id,
+        upload_date,
+    )
+    if uploaded_today_sec + requested_duration_sec > MAX_DAILY_RECORDING_UPLOAD_SEC:
+        return _recording_upload_limit_payload(
+            uploaded_today_sec,
+            requested_duration_sec,
+            upload_date,
+        )
+    return None
 
 
 def _build_coordinate_series(frames, clip_duration_sec):
@@ -1273,11 +1357,41 @@ def delete_account():
 @api_bp.route("/recordings/presign", methods=["POST"])
 def presign_recording_upload():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     content_type = (data.get("contentType") or "video/webm").strip()
+    duration_sec = data.get("durationSec")
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id:
         return jsonify({"error": "userId is required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_sec is not None and duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
+
+    if duration_value is not None:
+        try:
+            recordings_table = get_recordings_table()
+        except RuntimeError:
+            recordings_table = None
+
+        if recordings_table is not None:
+            try:
+                limit_payload = _check_daily_recording_upload_limit(
+                    recordings_table,
+                    user_id,
+                    created_at_dt,
+                    duration_value,
+                )
+            except Exception as err:
+                return jsonify({
+                    "error": "Unable to verify daily recording upload limit",
+                    "detail": str(err),
+                }), 500
+
+            if limit_payload is not None:
+                limit_payload["createdAt"] = normalized_created_at
+                return jsonify(limit_payload), 400
 
     try:
         s3 = get_s3_client()
@@ -1313,20 +1427,41 @@ def presign_recording_upload():
 @api_bp.route("/recordings", methods=["POST"])
 def save_recording_metadata():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
     workout_id = (data.get("workoutId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     object_key = (data.get("objectKey") or "").strip()
     content_type = (data.get("contentType") or "video/webm").strip()
     duration_sec = data.get("durationSec")
-    created_at = data.get("createdAt") or now_iso()
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id or not object_key:
         return jsonify({"error": "userId and objectKey are required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
 
     try:
         recordings_table = get_recordings_table()
     except RuntimeError as err:
         return jsonify({"status": "skipped", "reason": str(err)}), 200
+
+    try:
+        limit_payload = _check_daily_recording_upload_limit(
+            recordings_table,
+            user_id,
+            created_at_dt,
+            duration_value,
+        )
+    except Exception as err:
+        return jsonify({
+            "error": "Unable to verify daily recording upload limit",
+            "detail": str(err),
+        }), 500
+
+    if limit_payload is not None:
+        limit_payload["createdAt"] = normalized_created_at
+        return jsonify(limit_payload), 400
 
     recording_id = uuid4().hex
     item = {
@@ -1334,9 +1469,9 @@ def save_recording_metadata():
         "recordingId": recording_id,
         "objectKey": object_key,
         "contentType": content_type,
-        "durationSec": duration_sec,
-        "createdAt": created_at,
         "workoutId": workout_id,
+        "durationSec": duration_value,
+        "createdAt": normalized_created_at,
     }
 
     try:

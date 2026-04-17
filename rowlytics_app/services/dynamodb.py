@@ -42,6 +42,37 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_iso_datetime(value) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _coerce_duration_seconds(value) -> int:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0
+
+    if duration <= 0:
+        return 0
+    return int(round(duration))
+
+
 def _get_resource():
     if boto3 is None:
         raise RuntimeError("boto3 is required for DynamoDB access")
@@ -420,6 +451,53 @@ def list_recordings_page(recordings_table, user_id: str, workout_id: str
         **kwargs,
     )
     return page
+
+
+def sum_recording_durations_for_utc_date(
+    recordings_table,
+    user_id: str,
+    utc_date: str,
+) -> int:
+    try:
+        items = query_all(
+            recordings_table,
+            IndexName=RECORDINGS_CREATED_AT_INDEX,
+            KeyConditionExpression=(
+                Key("userId").eq(user_id) & Key("createdAt").begins_with(utc_date)
+            ),
+        )
+    except Exception as err:
+        logger.warning(
+            "sum_recording_durations_for_utc_date: index query failed, using fallback query: %s",
+            err,
+        )
+        if ClientError and isinstance(err, ClientError):
+            error_code = err.response.get("Error", {}).get("Code")
+            if error_code not in {"ValidationException", "ResourceNotFoundException"}:
+                raise
+        else:
+            raise
+
+        items = query_all(
+            recordings_table,
+            KeyConditionExpression=Key("userId").eq(user_id),
+        )
+        items = [
+            item
+            for item in items
+            if (_parse_iso_datetime(item.get("createdAt")) or datetime.min.replace(
+                tzinfo=timezone.utc
+            )).date().isoformat() == utc_date
+        ]
+
+    total_duration_sec = sum(_coerce_duration_seconds(item.get("durationSec")) for item in items)
+    logger.info(
+        "sum_recording_durations_for_utc_date: user=%s utc_date=%s total_duration_sec=%s",
+        user_id,
+        utc_date,
+        total_duration_sec,
+    )
+    return total_duration_sec
 
 
 def list_workouts(workouts_table, user_id: str):
