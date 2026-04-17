@@ -78,6 +78,10 @@
       score: asNumber(workout.workoutScore)
         ?? asNumber(parsedDetails["consistency score"])
         ?? asNumber(parsedDetails.score),
+      armsStraightScore: asNumber(workout.armsStraightScore)
+        ?? asNumber(parsedDetails["arms straight score"]),
+      backStraightScore: asNumber(workout.backStraightScore)
+        ?? asNumber(parsedDetails["back straight score"]),
       summary: workout.summary || parsedDetails.summary || "No summary provided.",
       strokeCount: asNumber(workout.strokeCount) ?? asNumber(parsedDetails["stroke count"]),
       cadenceSpm: asNumber(workout.cadenceSpm) ?? asNumber(parsedDetails["cadence (spm)"]),
@@ -153,12 +157,26 @@
         score.textContent = `${Math.round(metrics.score)}% consistency`;
       }
 
+      const armScore = buildMetricRow(
+        "Arms straight",
+        metrics.armsStraightScore == null ? "Not available" : `${Math.round(metrics.armsStraightScore)}%`,
+        true,
+      );
+
+      const backScore = buildMetricRow(
+        "Back straight",
+        metrics.backStraightScore == null ? "Not available" : `${Math.round(metrics.backStraightScore)}%`,
+        true,
+      );
+
       const preview = document.createElement("p");
       preview.className = "workout-card__summary";
       preview.textContent = "Click to view full workout summary →";
 
       card.appendChild(header);
       card.appendChild(score);
+      card.appendChild(armScore);
+      card.appendChild(backScore);
       card.appendChild(preview);
       grid.appendChild(card);
     });
