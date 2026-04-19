@@ -434,15 +434,23 @@ def list_recordings(recordings_table, user_id: str):
         return sorted(items, key=lambda item: item.get("createdAt") or "", reverse=True)
 
 
-def list_recordings_page(recordings_table, user_id: str, limit: int, exclusive_start_key=None):
-    return query_page(
-        recordings_table,
-        IndexName=RECORDINGS_CREATED_AT_INDEX,
-        KeyConditionExpression=Key("userId").eq(user_id),
-        ScanIndexForward=False,
+def list_recordings_page(recordings_table, user_id: str, workout_id: str
+                         , limit: int, exclusive_start_key=None):
+    kwargs = {
+        "IndexName": RECORDINGS_CREATED_AT_INDEX,
+        "KeyConditionExpression": Key("userId").eq(user_id),
+        "ScanIndexForward": False,
+
+    }
+    if workout_id:
+        kwargs["FilterExpression"] = Key("workoutId").eq(workout_id)
+    page = query_page(
+        table=recordings_table,
         limit=limit,
         exclusive_start_key=exclusive_start_key,
+        **kwargs,
     )
+    return page
 
 
 def sum_recording_durations_for_utc_date(

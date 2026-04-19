@@ -1427,6 +1427,7 @@ def presign_recording_upload():
 @api_bp.route("/recordings", methods=["POST"])
 def save_recording_metadata():
     data = request.get_json(silent=True) or {}
+    workout_id = (data.get("workoutId") or "").strip()
     user_id = _resolve_recording_user_id(data)
     object_key = (data.get("objectKey") or "").strip()
     content_type = (data.get("contentType") or "video/webm").strip()
@@ -1468,6 +1469,7 @@ def save_recording_metadata():
         "recordingId": recording_id,
         "objectKey": object_key,
         "contentType": content_type,
+        "workoutId": workout_id,
         "durationSec": duration_value,
         "createdAt": normalized_created_at,
     }
@@ -1487,6 +1489,7 @@ def list_recordings_for_user(user_id):
     if not user_id:
         logger.warning("GET /recordings: user_id is required")
         return jsonify({"error": "user_id is required"}), 400
+    workout_id = request.args.get("workoutId")
 
     try:
         limit = _parse_limit(request.args.get("limit"), RECORDINGS_PAGE_SIZE)
@@ -1504,9 +1507,10 @@ def list_recordings_for_user(user_id):
         logger.debug(f"GET /recordings: querying recordings for user {user_id}")
         items, next_key = list_recordings_page(
             recordings_table,
-            user_id,
+            user_id=user_id,
             limit=limit,
             exclusive_start_key=cursor,
+            workout_id=workout_id,
         )
         logger.info("GET /recordings: found %d recordings for user %s", len(items), user_id)
     except Exception as err:
@@ -1569,6 +1573,7 @@ def save_workout():
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
     created_at = data.get("createdAt") or completed_at
+    workout_id = data.get("workoutId")
 
     try:
         duration_value = float(duration_sec)
@@ -1590,7 +1595,6 @@ def save_workout():
         logger.warning("POST /workouts: workouts table not configured: %s", err)
         return jsonify({"status": "skipped", "reason": str(err)}), 200
 
-    workout_id = uuid4().hex
     item = {
         "userId": user_id,
         "workoutId": workout_id,
