@@ -619,6 +619,12 @@ function formatAlignmentOutput(payload) {
   const analysisWindowSec = payload.analysisWindowSec == null ? "n/a" : payload.analysisWindowSec;
   const clipCount = payload.clipCount == null ? "n/a" : payload.clipCount;
   const score = payload.score == null ? "n/a" : payload.score.toFixed(2);
+  const armsStraightScore = payload.armsStraightScore == null
+    ? "n/a"
+    : payload.armsStraightScore.toFixed(2);
+  const backStraightScore = payload.backStraightScore == null
+    ? "n/a"
+    : payload.backStraightScore.toFixed(2);
   const progression = payload.progressionStep == null ? "n/a" : payload.progressionStep;
   const meanDistance = payload.meanDistance == null ? "n/a" : payload.meanDistance;
   const matchedPoints = payload.matchedPoints == null ? 0 : payload.matchedPoints;
@@ -640,6 +646,8 @@ function formatAlignmentOutput(payload) {
     `analysis window (sec): ${analysisWindowSec}`,
     `clips observed: ${clipCount}`,
     `consistency score: ${score}`,
+    `arms straight score: ${armsStraightScore}`,
+    `back straight score: ${backStraightScore}`,
     `summary: ${payload.summary || "No summary"}`,
     `anchor landmark: ${payload.anchorLandmark || "n/a"}`,
     `progression step: ${progression}`,
@@ -1195,6 +1203,8 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId =
         strokeCount: latestWorkoutAnalysis?.strokeCount ?? null,
         cadenceSpm: latestWorkoutAnalysis?.cadenceSpm ?? null,
         rangeOfMotion: latestWorkoutAnalysis?.rangeOfMotion ?? null,
+        armsStraightScore: latestWorkoutAnalysis?.armsStraightScore ?? null,
+        backStraightScore: latestWorkoutAnalysis?.backStraightScore ?? null,
         dominantSide: latestWorkoutAnalysis?.dominantSide || null,
       })
     });

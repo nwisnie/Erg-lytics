@@ -217,6 +217,16 @@
         details.summary ||
         "No summary provided.";
 
+      const armsStraightScore =
+        asNumber(workout.armsStraightScore) ??
+        asNumber(details["arms straight score"]) ??
+        null;
+
+      const backStraightScore =
+        asNumber(workout.backStraightScore) ??
+        asNumber(details["back straight score"]) ??
+        null;
+
       const strokeCount =
         workout.strokeCount ??
         details["stroke count"] ??
@@ -267,6 +277,20 @@
               score == null ? "workout-card__score--missing" : "workout-card__score--ok"
             }">
               ${score != null ? `${Math.round(score)}% consistency` : "Score unavailable"}
+            </p>
+
+            <p class="workout-card__metric workout-card__metric--subtle">
+              <span class="workout-card__metric-label">Arms straight:</span>
+              <span class="workout-card__metric-value">
+                ${armsStraightScore != null ? `${Math.round(armsStraightScore)}%` : "Not available"}
+              </span>
+            </p>
+
+            <p class="workout-card__metric workout-card__metric--subtle">
+              <span class="workout-card__metric-label">Back straight:</span>
+              <span class="workout-card__metric-value">
+                ${backStraightScore != null ? `${Math.round(backStraightScore)}%` : "Not available"}
+              </span>
             </p>
 
             <p class="workout-card__summary">${summary}</p>
