@@ -2,6 +2,7 @@ import {
   FilesetResolver,
   PoseLandmarker
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304";
+import { v4 as uuidv4 } from "https://cdn.skypack.dev/uuid";
 
 const video = document.getElementById("liveCamera");
 const toggleBtn = document.getElementById("toggleCamera");
@@ -13,6 +14,7 @@ const viewport = document.querySelector(".capture__viewport");
 const placeholder = document.getElementById("capturePlaceholder");
 const captureSessionNotice = document.getElementById("captureSessionNotice");
 const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+let workoutId = null;
 const workoutDetailBase = document.body?.dataset?.workoutDetailBase || "";
 const urlParams = (() => {
   try {
@@ -46,7 +48,7 @@ const statusHiddenClass = "pose-status--hidden";
 const defaultStatusText = "Side profile not in frame";
 const readyStatusText = "Side profile in frame";
 const userId = document.body?.dataset?.userId || "demo-user";
-const recordingDurationMs = 5000;
+const recordingDurationMs = 7000;
 const maxWorkoutDurationMs = 60 * 60 * 1000;
 const maxWorkoutDurationSec = maxWorkoutDurationMs / 1000;
 const maxRecordingClipsPerWorkout = 3;
@@ -56,10 +58,13 @@ const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
 const workoutSummaryText = "Workout session";
-const workoutDurationLimitText = "Workouts automatically stop after 1 hour.";
+const workoutDurationLimitText = (
+  "Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day."
+);
 const workoutDurationLimitReachedText = "Workout reached the 1-hour limit and stopped automatically.";
 const workoutClipLimitReachedText = `Maximum of ${maxRecordingClipsPerWorkout} clips reached for this workout.`;
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+const recordingScoreThreshold = 100.0; // Only upload recordings with a movement gate score of 100.0 or below
 
 let stream = null;
 let poseLandmarker = null;
@@ -645,6 +650,12 @@ function formatAlignmentOutput(payload) {
   const analysisWindowSec = payload.analysisWindowSec == null ? "n/a" : payload.analysisWindowSec;
   const clipCount = payload.clipCount == null ? "n/a" : payload.clipCount;
   const score = payload.score == null ? "n/a" : payload.score.toFixed(2);
+  const armsStraightScore = payload.armsStraightScore == null
+    ? "n/a"
+    : payload.armsStraightScore.toFixed(2);
+  const backStraightScore = payload.backStraightScore == null
+    ? "n/a"
+    : payload.backStraightScore.toFixed(2);
   const progression = payload.progressionStep == null ? "n/a" : payload.progressionStep;
   const meanDistance = payload.meanDistance == null ? "n/a" : payload.meanDistance;
   const matchedPoints = payload.matchedPoints == null ? 0 : payload.matchedPoints;
@@ -666,6 +677,8 @@ function formatAlignmentOutput(payload) {
     `analysis window (sec): ${analysisWindowSec}`,
     `clips observed: ${clipCount}`,
     `consistency score: ${score}`,
+    `arms straight score: ${armsStraightScore}`,
+    `back straight score: ${backStraightScore}`,
     `summary: ${payload.summary || "No summary"}`,
     `anchor landmark: ${payload.anchorLandmark || "n/a"}`,
     `progression step: ${progression}`,
@@ -980,7 +993,7 @@ function getRecorderOptions() {
   return supported ? { mimeType: supported } : {};
 }
 
-async function requestUploadUrl(contentType) {
+async function requestUploadUrl(contentType, durationSec, createdAt) {
   const response = await fetch(`${apiBase}/api/recordings/presign`, {
     method: "POST",
     headers: {
@@ -988,7 +1001,9 @@ async function requestUploadUrl(contentType) {
     },
     body: JSON.stringify({
       userId,
-      contentType
+      contentType,
+      durationSec,
+      createdAt
     })
   });
 
@@ -1017,9 +1032,28 @@ async function saveRecordingMetadata(metadata) {
   }
 }
 
-async function uploadRecording(blob, createdAt) {
+async function previewAlignment(landmarkFrames, durationSec) {
+  const response = await fetch(`${apiBase}/api/workouts/alignment-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      frames: landmarkFrames,
+      clipDurationSec: durationSec,
+      clipCount: frames.length
+    }),
+  });
+  return await response.json();
+}
+
+async function uploadRecording(blob, createdAt, frames) {
   const contentType = blob.type || "video/webm";
-  const presign = await requestUploadUrl(contentType);
+  const durationSec = recordingDurationMs / 1000;
+  const result = await previewAlignment(frames, durationSec);
+  if(result.score == null || result.score > recordingScoreThreshold) {
+    return;
+  }
+
+  const presign = await requestUploadUrl(contentType, durationSec, createdAt);
 
   const uploadResponse = await fetch(presign.uploadUrl, {
     method: "PUT",
@@ -1037,8 +1071,10 @@ async function uploadRecording(blob, createdAt) {
     userId,
     objectKey: presign.objectKey,
     contentType,
-    durationSec: recordingDurationMs / 1000,
-    createdAt
+    durationSec,
+    createdAt,
+    workoutId
+
   });
 }
 
@@ -1058,7 +1094,7 @@ async function recordClip() {
   recordingInProgress = true;
   recordingCancelled = false;
   waitingForStrokeGate = false;
-  poseStatus.textContent = "Recording 5s clip...";
+  poseStatus.textContent = "Recording 7s clip...";
   debugCapture("recording_started", {
     clipIndex: movementWindowClipCount + 1,
     movementFrameCount: workoutMovementFrames.length,
@@ -1151,10 +1187,10 @@ async function recordClip() {
     }
 
     try {
-      await uploadRecording(blob, createdAt);
+      await uploadRecording(blob, createdAt, workoutMovementFrames);
     } catch (err) {
       console.error("Recording upload failed:", err);
-      poseStatus.textContent = "Upload failed";
+      poseStatus.textContent = err instanceof Error ? err.message : "Upload failed";
       return;
     }
 
@@ -1176,7 +1212,8 @@ async function recordClip() {
   }, recordingDurationMs);
 }
 
-async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
+async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId = null) {
+
   if (!apiBase) {
     console.warn("Workout not saved: missing apiBase");
     return;
@@ -1190,12 +1227,15 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt) {
         durationSec,
         startedAt,
         completedAt,
+        workoutId: workoutId,
         summary: latestWorkoutAnalysis?.summary || fallbackSummary,
         workoutScore: latestWorkoutScore,
         alignmentDetails: latestWorkoutAnalysisText,
         strokeCount: latestWorkoutAnalysis?.strokeCount ?? null,
         cadenceSpm: latestWorkoutAnalysis?.cadenceSpm ?? null,
         rangeOfMotion: latestWorkoutAnalysis?.rangeOfMotion ?? null,
+        armsStraightScore: latestWorkoutAnalysis?.armsStraightScore ?? null,
+        backStraightScore: latestWorkoutAnalysis?.backStraightScore ?? null,
         dominantSide: latestWorkoutAnalysis?.dominantSide || null,
       })
     });
@@ -1322,12 +1362,13 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
-    saveWorkoutEntry(durationSec, workoutStartAt, completedAt);
+    saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId);
   }
   workoutStartAt = null;
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  workoutId = null;
   if (stopReason !== "time-limit") {
     updateCaptureSessionNotice();
   }
@@ -1516,7 +1557,7 @@ toggleBtn.addEventListener("click", async () => {
     stopCamera();
     return;
   }
-
+  workoutId = uuidv4();
   await startCamera();
 });
 

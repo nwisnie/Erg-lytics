@@ -39,6 +39,7 @@ from rowlytics_app.services.dynamodb import (
     normalize_display_name,
     now_iso,
     resolve_user_by_identifier,
+    sum_recording_durations_for_utc_date,
     team_name_exists,
 )
 from rowlytics_app.services.s3 import UPLOAD_BUCKET_NAME, get_s3_client
@@ -125,7 +126,16 @@ ANGLE_MIN_STROKE_AMPLITUDE = 0.006
 ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
 MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
 MOTION_SPIKE_BASE_DELTA = 0.075
+ARMS_STRAIGHT_PROGRESS_MAX = 0.8
+ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG = 30.0
+ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG = 78.0
+ARMS_STRAIGHT_MIN_POINTS = 3
+BACK_STRAIGHT_PROGRESS_MAX = 0.9
+BACK_STRAIGHT_FULL_CREDIT_DEG = 132.0
+BACK_STRAIGHT_ZERO_CREDIT_DEG = 88.0
+BACK_STRAIGHT_MIN_POINTS = 3
 MAX_WORKOUT_DURATION_SEC = 60 * 60
+MAX_DAILY_RECORDING_UPLOAD_SEC = 2 * 60 * 60
 
 
 class MovementGateError(ValueError):
@@ -139,6 +149,88 @@ def _coerce_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _coerce_positive_duration_seconds(value):
+    duration = _coerce_float(value)
+    if duration is None or duration <= 0:
+        return None
+    return int(round(duration))
+
+
+def _parse_iso_datetime(value):
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _normalize_event_timestamp(value):
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        parsed = datetime.now(timezone.utc)
+    return parsed.isoformat(), parsed
+
+
+def _resolve_recording_user_id(data):
+    requested_user_id = (data.get("userId") or "").strip()
+    session_user_id = (session.get("user_id") or "").strip()
+
+    if session_user_id:
+        if requested_user_id and requested_user_id != session_user_id:
+            logger.warning(
+                "Recording request userId %s did not match session user %s; using session user",
+                requested_user_id,
+                session_user_id,
+            )
+        return session_user_id
+    return requested_user_id
+
+
+def _recording_upload_limit_payload(uploaded_today_sec, requested_duration_sec, upload_date):
+    remaining_today_sec = max(MAX_DAILY_RECORDING_UPLOAD_SEC - uploaded_today_sec, 0)
+    return {
+        "error": "Daily recording upload limit of 2 hours exceeded",
+        "uploadDate": upload_date,
+        "maxDailyUploadDurationSec": MAX_DAILY_RECORDING_UPLOAD_SEC,
+        "uploadedTodaySec": uploaded_today_sec,
+        "requestedDurationSec": requested_duration_sec,
+        "remainingTodaySec": remaining_today_sec,
+    }
+
+
+def _check_daily_recording_upload_limit(
+    recordings_table,
+    user_id,
+    created_at_dt,
+    requested_duration_sec,
+):
+    upload_date = created_at_dt.date().isoformat()
+    uploaded_today_sec = sum_recording_durations_for_utc_date(
+        recordings_table,
+        user_id,
+        upload_date,
+    )
+    if uploaded_today_sec + requested_duration_sec > MAX_DAILY_RECORDING_UPLOAD_SEC:
+        return _recording_upload_limit_payload(
+            uploaded_today_sec,
+            requested_duration_sec,
+            upload_date,
+        )
+    return None
 
 
 def _build_coordinate_series(frames, clip_duration_sec):
@@ -279,6 +371,124 @@ def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
         return normalized_joint_angle(shoulder, elbow, wrist)
     except ValueError:
         return None
+
+
+def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression):
+    if not side_coordinates or not anchor_progression:
+        return None
+
+    shoulder_name = f"{dominant_side}_shoulder"
+    elbow_name = f"{dominant_side}_elbow"
+    wrist_name = f"{dominant_side}_wrist"
+    assembler = PracticeStrokeAssembler()
+
+    by_time = {}
+    for item in side_coordinates:
+        by_time.setdefault(item["time"], {})[item["name"]] = item
+
+    straightness_scores = []
+    for timestamp in sorted(by_time.keys()):
+        frame = by_time[timestamp]
+        shoulder = frame.get(shoulder_name)
+        elbow = frame.get(elbow_name)
+        wrist = frame.get(wrist_name)
+        if not shoulder or not elbow or not wrist:
+            continue
+
+        try:
+            progression = assembler.match_progression_interval(
+                anchor_progression,
+                list(frame.values()),
+            )
+        except ValueError:
+            continue
+
+        if progression.get("progression_step", 1.0) > ARMS_STRAIGHT_PROGRESS_MAX:
+            continue
+
+        angle_value = _compute_elbow_angle_normalized(shoulder, elbow, wrist)
+        if angle_value is None:
+            continue
+
+        bend_degrees = max(0.0, (1.0 - angle_value) * 180.0)
+        if bend_degrees <= ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG:
+            straightness_scores.append(100.0)
+            continue
+
+        if bend_degrees >= ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG:
+            straightness_scores.append(0.0)
+            continue
+
+        remaining = ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG - bend_degrees
+        scoring_window = (
+            ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG
+            - ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG
+        )
+        straightness_scores.append((remaining / scoring_window) * 100.0)
+
+    if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
+        return None
+
+    return round(sum(straightness_scores) / len(straightness_scores), 2)
+
+
+def _score_back_straightness(side_coordinates, dominant_side, anchor_progression):
+    if not side_coordinates or not anchor_progression:
+        return None
+
+    hip_name = f"{dominant_side}_hip"
+    shoulder_name = f"{dominant_side}_shoulder"
+    ear_name = f"{dominant_side}_ear"
+    assembler = PracticeStrokeAssembler()
+
+    by_time = {}
+    for item in side_coordinates:
+        by_time.setdefault(item["time"], {})[item["name"]] = item
+
+    straightness_scores = []
+    for timestamp in sorted(by_time.keys()):
+        frame = by_time[timestamp]
+        hip = frame.get(hip_name)
+        shoulder = frame.get(shoulder_name)
+        head = frame.get(ear_name) or frame.get("nose")
+        if not hip or not shoulder or not head:
+            continue
+
+        try:
+            progression = assembler.match_progression_interval(
+                anchor_progression,
+                list(frame.values()),
+            )
+        except ValueError:
+            continue
+
+        if progression.get("progression_step", 1.0) > BACK_STRAIGHT_PROGRESS_MAX:
+            continue
+
+        angle_value = _compute_elbow_angle_normalized(hip, shoulder, head)
+        if angle_value is None:
+            continue
+
+        back_angle_degrees = angle_value * 180.0
+        if back_angle_degrees >= BACK_STRAIGHT_FULL_CREDIT_DEG:
+            straightness_scores.append(100.0)
+            continue
+
+        if back_angle_degrees <= BACK_STRAIGHT_ZERO_CREDIT_DEG:
+            straightness_scores.append(0.0)
+            continue
+
+        scoring_window = (
+            BACK_STRAIGHT_FULL_CREDIT_DEG
+            - BACK_STRAIGHT_ZERO_CREDIT_DEG
+        )
+        earned = back_angle_degrees - BACK_STRAIGHT_ZERO_CREDIT_DEG
+        straightness_scores.append((earned / scoring_window) * 100.0)
+
+    if len(straightness_scores) < BACK_STRAIGHT_MIN_POINTS:
+        return None
+
+    return round(sum(straightness_scores) / len(straightness_scores), 2)
 
 
 # Motion features are currently derived from upper-body landmark relationships.
@@ -666,9 +876,21 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
 
     mean_distance = (weighted_total / weight_sum) if weight_sum else None
     score = _alignment_score(mean_distance)
+    arms_straight_score = _score_arms_straightness(
+        side_coordinates,
+        dominant_side,
+        anchor_progression,
+    )
+    back_straight_score = _score_back_straightness(
+        side_coordinates,
+        dominant_side,
+        anchor_progression,
+    )
 
     return {
         "anchorLandmark": anchor_name,
+        "armsStraightScore": arms_straight_score,
+        "backStraightScore": back_straight_score,
         "dominantSide": dominant_side,
         "landmarksUsed": sorted(side_landmarks),
         "frameCount": len(frames),
@@ -1273,11 +1495,41 @@ def delete_account():
 @api_bp.route("/recordings/presign", methods=["POST"])
 def presign_recording_upload():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     content_type = (data.get("contentType") or "video/webm").strip()
+    duration_sec = data.get("durationSec")
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id:
         return jsonify({"error": "userId is required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_sec is not None and duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
+
+    if duration_value is not None:
+        try:
+            recordings_table = get_recordings_table()
+        except RuntimeError:
+            recordings_table = None
+
+        if recordings_table is not None:
+            try:
+                limit_payload = _check_daily_recording_upload_limit(
+                    recordings_table,
+                    user_id,
+                    created_at_dt,
+                    duration_value,
+                )
+            except Exception as err:
+                return jsonify({
+                    "error": "Unable to verify daily recording upload limit",
+                    "detail": str(err),
+                }), 500
+
+            if limit_payload is not None:
+                limit_payload["createdAt"] = normalized_created_at
+                return jsonify(limit_payload), 400
 
     try:
         s3 = get_s3_client()
@@ -1313,19 +1565,41 @@ def presign_recording_upload():
 @api_bp.route("/recordings", methods=["POST"])
 def save_recording_metadata():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
+    workout_id = (data.get("workoutId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     object_key = (data.get("objectKey") or "").strip()
     content_type = (data.get("contentType") or "video/webm").strip()
     duration_sec = data.get("durationSec")
-    created_at = data.get("createdAt") or now_iso()
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id or not object_key:
         return jsonify({"error": "userId and objectKey are required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
 
     try:
         recordings_table = get_recordings_table()
     except RuntimeError as err:
         return jsonify({"status": "skipped", "reason": str(err)}), 200
+
+    try:
+        limit_payload = _check_daily_recording_upload_limit(
+            recordings_table,
+            user_id,
+            created_at_dt,
+            duration_value,
+        )
+    except Exception as err:
+        return jsonify({
+            "error": "Unable to verify daily recording upload limit",
+            "detail": str(err),
+        }), 500
+
+    if limit_payload is not None:
+        limit_payload["createdAt"] = normalized_created_at
+        return jsonify(limit_payload), 400
 
     recording_id = uuid4().hex
     item = {
@@ -1333,8 +1607,9 @@ def save_recording_metadata():
         "recordingId": recording_id,
         "objectKey": object_key,
         "contentType": content_type,
-        "durationSec": duration_sec,
-        "createdAt": created_at,
+        "workoutId": workout_id,
+        "durationSec": duration_value,
+        "createdAt": normalized_created_at,
     }
 
     try:
@@ -1352,6 +1627,7 @@ def list_recordings_for_user(user_id):
     if not user_id:
         logger.warning("GET /recordings: user_id is required")
         return jsonify({"error": "user_id is required"}), 400
+    workout_id = request.args.get("workoutId")
 
     try:
         limit = _parse_limit(request.args.get("limit"), RECORDINGS_PAGE_SIZE)
@@ -1369,9 +1645,10 @@ def list_recordings_for_user(user_id):
         logger.debug(f"GET /recordings: querying recordings for user {user_id}")
         items, next_key = list_recordings_page(
             recordings_table,
-            user_id,
+            user_id=user_id,
             limit=limit,
             exclusive_start_key=cursor,
+            workout_id=workout_id,
         )
         logger.info("GET /recordings: found %d recordings for user %s", len(items), user_id)
     except Exception as err:
@@ -1430,10 +1707,13 @@ def save_workout():
     stroke_count = data.get("strokeCount")
     cadence_spm = data.get("cadenceSpm")
     range_of_motion = data.get("rangeOfMotion")
+    arms_straight_score = data.get("armsStraightScore")
+    back_straight_score = data.get("backStraightScore")
     dominant_side = (data.get("dominantSide") or "").strip()
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
     created_at = data.get("createdAt") or completed_at
+    workout_id = data.get("workoutId")
 
     try:
         duration_value = float(duration_sec)
@@ -1455,7 +1735,6 @@ def save_workout():
         logger.warning("POST /workouts: workouts table not configured: %s", err)
         return jsonify({"status": "skipped", "reason": str(err)}), 200
 
-    workout_id = uuid4().hex
     item = {
         "userId": user_id,
         "workoutId": workout_id,
@@ -1497,6 +1776,18 @@ def save_workout():
             item["rangeOfMotion"] = Decimal(str(range_of_motion))
         except (InvalidOperation, TypeError, ValueError):
             return jsonify({"error": "rangeOfMotion must be numeric"}), 400
+
+    if arms_straight_score is not None:
+        try:
+            item["armsStraightScore"] = Decimal(str(arms_straight_score))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "armsStraightScore must be numeric"}), 400
+
+    if back_straight_score is not None:
+        try:
+            item["backStraightScore"] = Decimal(str(back_straight_score))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "backStraightScore must be numeric"}), 400
 
     if dominant_side:
         item["dominantSide"] = dominant_side

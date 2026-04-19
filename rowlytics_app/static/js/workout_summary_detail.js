@@ -1,8 +1,12 @@
 (() => {
+  const PAGE_SIZE = 8;
+
   const container = document.getElementById("workoutDetail");
   const message = document.getElementById("workoutDetailMessage");
   const workoutId = document.body?.dataset?.workoutId;
   const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
+  const userId = document.body?.dataset?.userId;
+  const loadMoreBtn = document.getElementById("recordingsLoadMoreBtn");
   const capturedFromWorkout = (() => {
     try {
       const params = new URLSearchParams(window.location.search || "");
@@ -12,9 +16,127 @@
     }
   })();
 
-  if (!container || !message || !workoutId) {
+  if (!container || !message || !workoutId || !userId) {
     return;
   }
+
+  let recordings = [];
+  let nextCursor = null;
+  let loading = false;
+
+  const getGrid = () => document.getElementById("recordingsGrid");
+
+  const setLoadMoreState = (cursor, isLoading = false) => {
+    nextCursor = cursor || null;
+    if (!loadMoreBtn) return;
+    loadMoreBtn.classList.toggle("recordings-load-more--hidden", !nextCursor);
+    loadMoreBtn.disabled = isLoading;
+    loadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
+  };
+
+  const setMessage = (text, tone) => {
+    message.textContent = text;
+    message.classList.remove("recordings-message--error", "recordings-message--success");
+    if (tone === "error") message.classList.add("recordings-message--error");
+    if (tone === "success") message.classList.add("recordings-message--success");
+  };
+
+  const renderEmpty = () => {
+    const grid = getGrid();
+    if (!grid) return;
+
+    grid.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "recordings-empty";
+    empty.textContent = "Snapshot clips will appear here.";
+    grid.appendChild(empty);
+  };
+
+  const renderRecordings = () => {
+    const grid = getGrid();
+    if (!grid) return;
+    grid.innerHTML = "";
+    if (!recordings.length) {
+      renderEmpty();
+      return;
+    }
+
+    recordings.forEach((recording) => {
+      const card = document.createElement("article");
+      card.className = "recording-card";
+
+      const video = document.createElement("video");
+      video.controls = true;
+      video.preload = "metadata";
+      if (recording.playbackUrl) {
+        video.src = recording.playbackUrl;
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "recording-card__meta";
+      const createdAt = recording.createdAt
+        ? new Date(recording.createdAt).toLocaleString()
+        : "Unknown date";
+      meta.textContent = createdAt;
+
+      card.appendChild(video);
+      card.appendChild(meta);
+      grid.appendChild(card);
+    });
+  };
+
+  const loadRecordings = async ({ append = false } = {}) => {
+    if (append && (!nextCursor || loading)) return;
+    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    if (append && nextCursor) {
+      params.set("cursor", nextCursor);
+    }
+    if (workoutId) {
+      params.set("workoutId", workoutId);
+    }
+
+    loading = true;
+    setLoadMoreState(nextCursor, true);
+    if (!append) {
+      setMessage("Loading recordings...");
+    }
+
+    try {
+      const response = await fetch(
+        getApiUrl(`/api/recordings/${encodeURIComponent(userId)}?${params.toString()}`),
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load recordings");
+      }
+
+      recordings = append
+        ? recordings.concat(payload.recordings || [])
+        : (payload.recordings || []);
+      renderRecordings();
+      setLoadMoreState(payload.nextCursor, false);
+      setMessage("");
+    } catch (err) {
+      if (!append) {
+        recordings = [];
+        renderEmpty();
+      }
+      setMessage(err.message || "Unable to load recordings", "error");
+      setLoadMoreState(nextCursor, false);
+    } finally {
+      loading = false;
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = false;
+      }
+    }
+  };
+
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener("click", async () => {
+      await loadRecordings({ append: true });
+    });
+  }
+
 
   const getApiUrl = (path) => {
     if (apiBase) return apiBase + path;
@@ -68,7 +190,8 @@
   };
 
   const loadWorkout = async () => {
-    message.textContent = "Loading workout...";
+    setMessage("Loading workout...");
+
     try {
       const response = await fetch(getApiUrl(`/api/workouts/${workoutId}`));
       const payload = await response.json();
@@ -93,6 +216,16 @@
         workout.summary ||
         details.summary ||
         "No summary provided.";
+
+      const armsStraightScore =
+        asNumber(workout.armsStraightScore) ??
+        asNumber(details["arms straight score"]) ??
+        null;
+
+      const backStraightScore =
+        asNumber(workout.backStraightScore) ??
+        asNumber(details["back straight score"]) ??
+        null;
 
       const strokeCount =
         workout.strokeCount ??
@@ -146,6 +279,20 @@
               ${score != null ? `${Math.round(score)}% consistency` : "Score unavailable"}
             </p>
 
+            <p class="workout-card__metric workout-card__metric--subtle">
+              <span class="workout-card__metric-label">Arms straight:</span>
+              <span class="workout-card__metric-value">
+                ${armsStraightScore != null ? `${Math.round(armsStraightScore)}%` : "Not available"}
+              </span>
+            </p>
+
+            <p class="workout-card__metric workout-card__metric--subtle">
+              <span class="workout-card__metric-label">Back straight:</span>
+              <span class="workout-card__metric-value">
+                ${backStraightScore != null ? `${Math.round(backStraightScore)}%` : "Not available"}
+              </span>
+            </p>
+
             <p class="workout-card__summary">${summary}</p>
 
             <div class="workout-card__metrics">
@@ -169,26 +316,32 @@
               <p>Review the short clips captured during this workout session.</p>
             </div>
 
-            <div id="workoutSnapshots" class="recordings-grid">
-              <div class="recordings-empty">Snapshot clips will appear here.</div>
+            <div id="recordingsGrid" class="recordings-grid"></div>
             </div>
           </section>
         </div>
       `;
 
-      message.classList.remove("recordings-message--error", "recordings-message--success");
+       message.classList.remove(
+    "recordings-message--error",
+    "recordings-message--success"
+       );
+
       if (capturedFromWorkout) {
-        message.textContent = "Workout successfully captured.";
-        message.classList.add("recordings-message--success");
-      } else {
-        message.textContent = "";
-      }
-    } catch (err) {
-      message.classList.remove("recordings-message--success");
-      message.textContent = err.message || "Unable to load workout";
-      message.classList.add("recordings-message--error");
+      setMessage("Workout successfully captured.", "success");
+    } else {
+      setMessage("");
     }
-  };
+
+    try {
+      await loadRecordings();
+    } catch (err) {
+        setMessage(err.message || "Unable to load workout", "error");
+      }
+  } catch (err) {
+    setMessage(err.message || "An error occurred", "error");
+  }
+};
 
   loadWorkout();
 })();
