@@ -48,7 +48,7 @@ const statusHiddenClass = "pose-status--hidden";
 const defaultStatusText = "Side profile not in frame";
 const readyStatusText = "Side profile in frame";
 const userId = document.body?.dataset?.userId || "demo-user";
-const recordingDurationMs = 5000;
+const recordingDurationMs = 7000;
 const maxWorkoutDurationMs = 60 * 60 * 1000;
 const maxWorkoutDurationSec = maxWorkoutDurationMs / 1000;
 const maxRecordingClipsPerWorkout = 3;
@@ -64,6 +64,7 @@ const workoutDurationLimitText = (
 const workoutDurationLimitReachedText = "Workout reached the 1-hour limit and stopped automatically.";
 const workoutClipLimitReachedText = `Maximum of ${maxRecordingClipsPerWorkout} clips reached for this workout.`;
 const mobileUserAgentRegex = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i;
+const recordingScoreThreshold = 100.0; // Only upload recordings with a movement gate score of 100.0 or below
 
 let stream = null;
 let poseLandmarker = null;
@@ -992,9 +993,27 @@ async function saveRecordingMetadata(metadata) {
   }
 }
 
-async function uploadRecording(blob, createdAt) {
+async function previewAlignment(landmarkFrames, durationSec) {
+  const response = await fetch(`${apiBase}/api/workouts/alignment-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      frames: landmarkFrames,
+      clipDurationSec: durationSec,
+      clipCount: frames.length
+    }),
+  });
+  return await response.json();
+}
+
+async function uploadRecording(blob, createdAt, frames) {
   const contentType = blob.type || "video/webm";
   const durationSec = recordingDurationMs / 1000;
+  const result = await previewAlignment(frames, durationSec);
+  if(result.score == null || result.score > recordingScoreThreshold) {
+    return;
+  }
+
   const presign = await requestUploadUrl(contentType, durationSec, createdAt);
 
   const uploadResponse = await fetch(presign.uploadUrl, {
@@ -1036,7 +1055,7 @@ async function recordClip() {
   recordingInProgress = true;
   recordingCancelled = false;
   waitingForStrokeGate = false;
-  poseStatus.textContent = "Recording 5s clip...";
+  poseStatus.textContent = "Recording 7s clip...";
   debugCapture("recording_started", {
     clipIndex: movementWindowClipCount + 1,
     movementFrameCount: workoutMovementFrames.length,
@@ -1129,7 +1148,7 @@ async function recordClip() {
     }
 
     try {
-      await uploadRecording(blob, createdAt);
+      await uploadRecording(blob, createdAt, workoutMovementFrames);
     } catch (err) {
       console.error("Recording upload failed:", err);
       poseStatus.textContent = err instanceof Error ? err.message : "Upload failed";
