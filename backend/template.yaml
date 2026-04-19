@@ -16,8 +16,8 @@ Parameters:
 
   AppBaseUrl:
     Type: String
-    Default: https://xft207g10i.execute-api.us-east-2.amazonaws.com/Prod
-    Description: Base URL used for Cognito callback and logout redirects.
+    Default: https://dev.erglytics.com
+    Description: Public URL for this stack used for Cognito callback urls.
 
   SesFromEmail:
     Type: String
@@ -491,5 +491,8 @@ Outputs:
     Value: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
   UserPoolDomain:
     Value: !Ref CognitoHostedUiDomain
+  ErglyticsAppUrl:
+    Description: Public application URL
+    Value: !Ref AppBaseUrl
   RowlyticsApiUrl:
     Value: !Sub "https://${RowlyticsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
