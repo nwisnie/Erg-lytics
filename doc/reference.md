@@ -17,11 +17,15 @@
 - Request fields:
   - `userId`
   - `contentType` (optional)
+  - `durationSec` (optional, used to enforce the daily upload cap before S3 upload)
+  - `createdAt` (optional, used to determine the UTC upload day)
 - Response fields:
   - `uploadUrl`
   - `objectKey`
   - `bucket`
   - `expiresIn`
+- Validation:
+  - Recording uploads are capped at 2 hours total per user per UTC day.
 
 ### POST /api/workouts
 
@@ -109,6 +113,7 @@
 - The browser requests a presigned upload URL from `/api/recordings/presign`.
 - The video clip is uploaded directly to S3.
 - Recording metadata is saved through `/api/recordings`.
+- Both endpoints enforce a maximum of 2 uploaded recording hours per user per UTC day.
 - Saved metadata includes:
   - `userId`
   - `recordingId`
