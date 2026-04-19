@@ -95,6 +95,37 @@ let latestWorkoutAnalysis = null;
 let latestWorkoutAnalysisText = "";
 let latestWorkoutScore = null;
 
+const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
+
+const workoutStartedAudio = new Audio(`${STATIC_ASSET_BASE}/audio/workout-started.mp3`);
+const workoutEndedAudio = new Audio(`${STATIC_ASSET_BASE}/audio/workout-ended.mp3`);
+const inPositionAudio = new Audio(`${STATIC_ASSET_BASE}/audio/in-position.mp3`);
+
+workoutStartedAudio.preload = "auto";
+workoutEndedAudio.preload = "auto";
+inPositionAudio.preload = "auto";
+
+function playWorkoutStartedAudio() {
+  workoutStartedAudio.currentTime = 0;
+  workoutStartedAudio.play().catch((err) => {
+    console.warn("Could not play workout started audio:", err);
+  });
+}
+
+function playWorkoutEndedAudio() {
+  workoutEndedAudio.currentTime = 0;
+  workoutEndedAudio.play().catch((err) => {
+    console.warn("Could not play workout ended audio:", err);
+  });
+}
+
+function playInPositionAudio() {
+  inPositionAudio.currentTime = 0;
+  inPositionAudio.play().catch((err) => {
+    console.warn("Could not play in-position audio:", err);
+  });
+}
+
 const SIDE_PROFILE_LEFT = [11, 13, 15, 23, 25, 27];
 const SIDE_PROFILE_RIGHT = [12, 14, 16, 24, 26, 28];
 const sideProfileVisibilityThreshold = 0.35;
@@ -1235,12 +1266,20 @@ async function startCamera() {
     facingMode: preferredFacingMode
   });
 
+  inPositionPromptPlayed = false;
+
   if (running) {
     requestAnimationFrame(loop);
   }
+
+  playWorkoutStartedAudio();
 }
 
 function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) {
+  if (stream) {
+    playWorkoutEndedAudio();
+  }
+
   running = false;
   cancelActiveRecording();
   clearWorkoutStopTimeout();
@@ -1386,6 +1425,10 @@ function loop() {
       );
 
       lastInFrame = inFrame;
+      if (inFrame && !inPositionPromptPlayed) {
+        inPositionPromptPlayed = true;
+        playInPositionAudio();
+      }
       poseStatus.classList.toggle("ready", inFrame);
       if (!recordingInProgress) {
         if (!inFrame) {
