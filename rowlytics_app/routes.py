@@ -12,6 +12,7 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -29,6 +30,7 @@ from rowlytics_app.auth.sessions import user_context
 from rowlytics_app.services.dynamodb import fetch_user_profile, sync_user_profile
 from rowlytics_app.services.metrics import publish_login_latency
 from rowlytics_app.services.mock_email import send_mock_auto_email
+from rowlytics_app.services.weekly_coach_summary import run_weekly_coach_summaries
 
 public_bp = Blueprint("public", __name__)
 APP_VERSION = "0.0.1"
@@ -306,3 +308,16 @@ def test_email():
         return f"Test email sent to {test_to}"
     except Exception as exc:
         return f"Failed to send email: {exc}"
+
+@public_bp.route("/test-weekly-coach-summaries")
+def test_weekly_coach_summaries():
+    try:
+        results = run_weekly_coach_summaries()
+        return jsonify(results), 200
+    except Exception as exc:
+        return jsonify(
+            {
+                "status": "failed",
+                "error": str(exc),
+            }
+        ), 500

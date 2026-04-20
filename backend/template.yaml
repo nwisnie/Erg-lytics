@@ -475,6 +475,12 @@ Resources:
             RestApiId: !Ref RowlyticsApi
             Path: /{proxy+}
             Method: ANY
+        WeeklyCoachSummarySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(7 days)
+            Enabled: true
+            Input: '{ "scheduled_task": "weekly_coach_summary" }'
 
 Outputs:
   UsersTableName:
