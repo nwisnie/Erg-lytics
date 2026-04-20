@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import awsgi
+import json
 
 from rowlytics_app import create_app
+from rowlytics_app.services.weekly_coach_summary import run_weekly_coach_summaries
 
 app = create_app()
 
@@ -24,6 +26,14 @@ def _inject_stage_prefix(event):
 
 
 def lambda_handler(event, context):
+    if event.get("scheduled_task") == "weekly_coach_summary":
+        with app.app_context():
+            results = run_weekly_coach_summaries()
+        return {
+            "statusCode": 200,
+            "body": json.dumps(results),
+        }
+    
     event = _inject_stage_prefix(event)
     return awsgi.response(
         app,
