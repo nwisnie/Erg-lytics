@@ -11,6 +11,7 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_alignment.py` | `pytest` | 23 | Practice-stroke assembly, progression-step generation, progression matching, and ideal-model coordinate selection |
 | `tests/test_app.py` | `pytest` | 6 | Flask app creation and basic route rendering |
 | `tests/test_auth.py` | `pytest` | 20 | Cognito helpers, token parsing, login URL generation, token exchange, user deletion, session context |
+| `tests/test_capture_workout_save.py` | `pytest` | 3 | Capture-workout save gating, workout-analysis snapshot preservation, and threshold rejection behavior |
 | `tests/test_dynamodb.py` | `pytest` | 37 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and stage prefix header injection |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
@@ -19,7 +20,7 @@ This document inventories the tests currently present in the repository. Current
 | `tests/test_email_integration.py` | `pytest` | 1 | Integration of `/test-email` route, mock email generation, template rendering, and SES send pipeline |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 103 tests
+Current automated inventory total: 106 tests
 
 ## Pytest Inventory
 
@@ -105,6 +106,17 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
   `test_delete_cognito_user_uses_access_token`, `test_delete_cognito_user_fallbacks_to_admin_delete`, `test_delete_cognito_user_requires_pool_or_username`, `test_delete_cognito_user_raises_with_last_error`
 - Session helper:
   `test_user_context_reads_from_flask_session`
+
+### `tests/test_capture_workout_save.py` (3 tests)
+
+- `test_workout_analysis_snapshot_values_are_preserved`
+  Confirms workout-save payloads preserve passed analysis values such as summary, workout score, alignment details, stroke count, cadence, range of motion, arm/back straightness, and dominant side.
+
+- `test_workout_analysis_snapshot_handles_missing_analysis`
+  Confirms workout-save payloads fall back safely when no workout analysis is available, including use of the default summary and `None` values for optional metrics.
+
+- `test_clip_threshold_rejection_behavior`
+  Confirms capture-workout save gating rejects clips when the score is missing or above the threshold and allows saves when the score is within the accepted range.
 
 ### `tests/test_dynamodb.py` (36 tests)
 
