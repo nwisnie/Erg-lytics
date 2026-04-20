@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import awsgi
 import json
+
+import awsgi
 
 from rowlytics_app import create_app
 from rowlytics_app.services.weekly_coach_summary import run_weekly_coach_summaries
