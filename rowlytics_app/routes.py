@@ -309,6 +309,7 @@ def test_email():
     except Exception as exc:
         return f"Failed to send email: {exc}"
 
+
 @public_bp.route("/test-weekly-coach-summaries")
 def test_weekly_coach_summaries():
     try:

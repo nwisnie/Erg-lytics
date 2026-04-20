@@ -34,7 +34,6 @@ def lambda_handler(event, context):
             "statusCode": 200,
             "body": json.dumps(results),
         }
-    
     event = _inject_stage_prefix(event)
     return awsgi.response(
         app,
