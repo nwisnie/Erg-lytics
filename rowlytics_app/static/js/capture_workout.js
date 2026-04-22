@@ -57,7 +57,6 @@ const recordingCooldownMs = 3000;
 const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
-const workoutSummaryText = "Workout session";
 const workoutDurationLimitText = (
   "Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day."
 );
@@ -112,10 +111,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 12000;
+const formBadDurationMs = 7000;
 const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 70;
-const backStraightThreshold = 70;
+const armsStraightThreshold = 90;
+const backStraightThreshold = 90;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
@@ -150,9 +149,9 @@ const movementMinStrokesRequired = 3;
 const movementMinRangeOfMotion = 0.12;
 const movementMinCycleSec = 0.35;
 const movementMaxCycleSec = 6.0;
-const movementTurnEpsilon = 0.0012;
+const movementTurnEpsilon = 0.0025;
 const movementMinAmplitudeFloor = 0.009;
-const movementAmplitudeScale = 0.14;
+const movementAmplitudeScale = 0.08;
 const movementAngleMinRangeOfMotion = 0.06;
 const movementAngleMinAmplitudeFloor = 0.006;
 const movementAngleAmplitudeScale = 0.11;
@@ -160,7 +159,7 @@ const movementHistoryMaxFrames = 1800;
 const glitchFrameMaxDtSec = 0.2;
 const glitchFrameMaxDelta = 0.14;
 const glitchFrameMinComparablePoints = 3;
-const motionSpikeMaxDeltaPerSec = 1.2;
+const motionSpikeMaxDeltaPerSec = 2.5;
 const motionSpikeBaseDelta = 0.075;
 const motionSignalVisibilityFloor = 0.12;
 const motionComparisonLandmarkIndices = [11, 12, 13, 14, 15, 16];
@@ -559,13 +558,25 @@ function evaluateMovementGate(frames, clipDurationSec) {
       rangeOfMotion * candidate.amplitudeScale
     );
     const turningPoints = findTurningPoints(smoothedSignal);
-    const strokeCount = countStrokes(
-      turningPoints,
-      minAmplitude,
-      movementMinCycleSec,
-      movementMaxCycleSec
-    );
 
+    const strokeCount = countStrokes(
+          turningPoints,
+          minAmplitude,
+          movementMinCycleSec,
+          movementMaxCycleSec
+        );
+
+    console.log("stroke debug", {
+      signalStrategy: candidate.signalStrategy,
+      rawSignalPointCount: rawSeries.length,
+      signalPointCount: smoothedSignal.length,
+      signalDropCount,
+      turningPoints: turningPoints.length,
+      rangeOfMotion,
+      minAmplitude,
+      strokeCount
+    });
+    
     const activeDurationSec = Math.max(
       smoothedSignal[smoothedSignal.length - 1].time - smoothedSignal[0].time,
       clipDurationSec
