@@ -11,6 +11,8 @@
   const createInput = document.getElementById("teamCreateName");
   const teamStatus = document.getElementById("teamStatus");
   const teamIdDisplay = document.getElementById("teamIdDisplay");
+  const teamStatsGrid = document.getElementById("teamStatsGrid");
+  const teamStatsMessage = document.getElementById("teamStatsMessage");
   const teamMembersList = document.getElementById("teamMembersList");
   const teamMembersLoadMore = document.getElementById("teamMembersLoadMore");
   const teamAddForm = document.getElementById("teamAddForm");
@@ -25,6 +27,7 @@
 
   let currentTeamId = null;
   let currentTeamName = null;
+  let currentTeamStats = null;
   let nextMembersCursor = null;
   let members = [];
   let loadingMembers = false;
@@ -42,6 +45,74 @@
     teamMembersLoadMore.classList.toggle("team-load-more--hidden", !nextMembersCursor);
     teamMembersLoadMore.disabled = loading;
     teamMembersLoadMore.textContent = loading ? "Loading..." : "Load more members";
+  };
+
+  const formatPercent = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? `${Math.round(numeric)}%` : "Not available";
+  };
+
+  const buildStatCard = (label, value, detail) => {
+    const card = document.createElement("article");
+    card.className = "team-stat-card";
+
+    const valueEl = document.createElement("p");
+    valueEl.className = "team-stat-card__value";
+    valueEl.textContent = value;
+
+    const labelEl = document.createElement("p");
+    labelEl.className = "team-stat-card__label";
+    labelEl.textContent = label;
+
+    const detailEl = document.createElement("p");
+    detailEl.className = "team-stat-card__detail";
+    detailEl.textContent = detail;
+
+    card.append(valueEl, labelEl, detailEl);
+    return card;
+  };
+
+  const renderTeamStats = (stats) => {
+    if (!teamStatsGrid) return;
+
+    teamStatsGrid.innerHTML = "";
+    if (teamStatsMessage) {
+      teamStatsMessage.textContent = "";
+    }
+
+    if (!stats) {
+      teamStatsGrid.appendChild(buildStatCard("Workouts", "0", "No team workout data yet"));
+      return;
+    }
+
+    const metricCards = [
+      ["Average consistency", stats.metrics?.consistencyScore],
+      ["Average arms straight", stats.metrics?.armsStraightScore],
+      ["Average back straight", stats.metrics?.backStraightScore],
+    ];
+
+    teamStatsGrid.appendChild(
+      buildStatCard(
+        "Members",
+        String(stats.memberCount ?? members.length),
+        `${stats.workoutCount ?? 0} team workouts`,
+      ),
+    );
+
+    metricCards.forEach(([label, metric]) => {
+      const count = metric?.count || 0;
+      teamStatsGrid.appendChild(
+        buildStatCard(
+          label,
+          formatPercent(metric?.average),
+          count ? `${count} workouts included` : "No available scores",
+        ),
+      );
+    });
+
+    if (teamStatsMessage && stats.unavailableReason) {
+      teamStatsMessage.textContent = stats.unavailableReason;
+    }
   };
 
   const renderMembers = () => {
@@ -79,20 +150,26 @@
     teamStatus.textContent = "You're not on a team yet.";
     currentTeamId = null;
     currentTeamName = null;
+    currentTeamStats = null;
     members = [];
     renderMembers();
+    renderTeamStats(null);
     setLoadMoreState(null);
   };
 
-  const showActive = (teamId, teamName, incomingMembers, nextCursor, append) => {
+  const showActive = (teamId, teamName, incomingMembers, nextCursor, append, teamStats) => {
     joinSection.classList.add("team-panel__section--hidden");
     activeSection.classList.remove("team-panel__section--hidden");
     teamStatus.textContent = "You're on a team.";
     teamIdDisplay.textContent = teamName ? `Team name: ${teamName}` : `Team ID: ${teamId}`;
     currentTeamId = teamId;
     currentTeamName = teamName || null;
+    if (teamStats !== undefined) {
+      currentTeamStats = teamStats;
+    }
     members = append ? members.concat(incomingMembers) : incomingMembers;
     renderMembers();
+    renderTeamStats(currentTeamStats);
     setLoadMoreState(nextCursor);
   };
 
@@ -104,6 +181,7 @@
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
     if (append && nextMembersCursor) {
       params.set("cursor", nextMembersCursor);
+      params.set("includeStats", "false");
     }
 
     loadingMembers = true;
@@ -124,7 +202,14 @@
         return;
       }
 
-      showActive(data.teamId, data.teamName, data.members || [], data.nextCursor, append);
+      showActive(
+        data.teamId,
+        data.teamName,
+        data.members || [],
+        data.nextCursor,
+        append,
+        data.teamStats,
+      );
     } catch (err) {
       if (!append) {
         showJoin();

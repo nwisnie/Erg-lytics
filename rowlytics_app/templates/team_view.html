@@ -52,12 +52,19 @@
 
         <section id="teamActiveSection" class="team-panel__section team-panel__section--hidden">
           <div class="team-panel__row">
-            <div>
+            <div class="team-panel__identity">
               <h3>Current team</h3>
               <p id="teamIdDisplay" class="team-panel__hint"></p>
+              <a class="btn btn--subtle" href="{{ url_for('public.template_detail', slug='team-stats') }}">
+                Advanced stats
+              </a>
             </div>
             <button id="teamLeaveBtn" class="btn btn--danger" type="button">Leave team</button>
           </div>
+
+          <h3>Team averages</h3>
+          <div id="teamStatsGrid" class="team-stats-summary"></div>
+          <p id="teamStatsMessage" class="team-panel__hint"></p>
 
           <h3>Members</h3>
           <ul id="teamMembersList" class="team-members"></ul>
