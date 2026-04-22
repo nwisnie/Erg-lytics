@@ -1174,11 +1174,10 @@ async function recordClip() {
       return;
     }
 
-    movementWindowClipCount += 1;
-    const movementWindowSec = getMovementWindowSec();
+    const clipDurationSec = recordingDurationMs / 1000;
     const localMovement = evaluateMovementGate(
-      workoutMovementFrames,
-      movementWindowSec
+      recordedLandmarkFrames,
+      clipDurationSec
     );
     localMovement.clipCount = movementWindowClipCount;
     logMovementDebug("recording_stopped_gate_eval", localMovement, {
@@ -1194,10 +1193,10 @@ async function recordClip() {
     let analysisPayload = null;
     try {
       analysisPayload = await analyzeLandmarkFrames(
-        workoutMovementFrames,
+        recordedLandmarkFrames,
         createdAt,
-        movementWindowSec,
-        movementWindowClipCount
+        clipDurationSec,
+        movementWindowClipCount + 1
       );
       debugCapture("server_analysis_ok", {
         clipIndex: movementWindowClipCount,
@@ -1248,6 +1247,7 @@ async function recordClip() {
       poseStatus.textContent = err instanceof Error ? err.message : "Upload failed";
       return;
     }
+    movementWindowClipCount += 1;
     rememberWorkoutAnalysis({ ...localMovement, ...analysisPayload });
     debugCapture("clip_saved", {
       clipIndex: movementWindowClipCount,
