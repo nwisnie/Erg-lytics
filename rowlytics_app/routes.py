@@ -306,3 +306,17 @@ def test_email():
         return f"Test email sent to {test_to}"
     except Exception as exc:
         return f"Failed to send email: {exc}"
+
+
+@public_bp.route("/test-weekly-coach-summaries")
+def test_weekly_coach_summaries():
+    try:
+        results = run_weekly_coach_summaries()
+        return jsonify(results), 200
+    except Exception as exc:
+        return jsonify(
+            {
+                "status": "failed",
+                "error": str(exc),
+            }
+        ), 500

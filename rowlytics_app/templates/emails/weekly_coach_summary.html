@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: Arial, sans-serif; line-height: 1.6;">
+    <h2>Weekly Team Summary</h2>
+
+    <p>Hello Coach,</p>
+
+    <p>
+      Here is this week's update for
+      <strong>{{ summary.team_name }}</strong>.
+    </p>
+
+    <p><strong>Total members:</strong> {{ summary.member_count }}</p>
+    <p><strong>Coaches:</strong> {{ summary.coach_count }}</p>
+    <p><strong>Rowers:</strong> {{ summary.rower_count }}</p>
+
+    <p><strong>Team roster:</strong></p>
+    <ul>
+      {% for member_name in summary.member_names %}
+        <li>{{ member_name }}</li>
+      {% endfor %}
+    </ul>
+
+    <hr>
+
+    <p><strong>Current placeholder weekly metrics:</strong></p>
+    <ul>
+      <li><strong>Workouts completed:</strong> {{ summary.workouts_completed }}</li>
+      <li><strong>Average split:</strong> {{ summary.avg_split }}</li>
+      <li><strong>Average stroke rate:</strong> {{ summary.avg_rate }}</li>
+    </ul>
+
+    <p>
+      These performance values are still mock data for now, but the team and
+      roster information above is loaded dynamically.
+    </p>
+  </body>
+</html>
