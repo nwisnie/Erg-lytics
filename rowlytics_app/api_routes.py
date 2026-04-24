@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
@@ -35,6 +35,7 @@ from rowlytics_app.services.dynamodb import (
     list_recordings_page,
     list_team_members_by_team,
     list_team_memberships,
+    list_workouts,
     list_workouts_page,
     normalize_display_name,
     now_iso,
@@ -178,11 +179,110 @@ def _parse_iso_datetime(value):
     return parsed.astimezone(timezone.utc)
 
 
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
 def _normalize_event_timestamp(value):
     parsed = _parse_iso_datetime(value)
     if parsed is None:
-        parsed = datetime.now(timezone.utc)
+        parsed = _now_utc()
     return parsed.isoformat(), parsed
+
+
+def _coerce_score_value(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_workout_completed_at(item):
+    return _parse_iso_datetime(item.get("completedAt") or item.get("createdAt"))
+
+
+def _get_workout_composite_score(item):
+    metric_keys = ("workoutScore", "armsStraightScore", "backStraightScore")
+    values = [
+        value
+        for value in (_coerce_score_value(item.get(metric_key)) for metric_key in metric_keys)
+        if value is not None
+    ]
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def _build_weekly_summary(
+    title,
+    workouts,
+    points,
+    *,
+    team_id=None,
+    team_name=None,
+    member_count=None,
+    empty_state=None,
+):
+    def _average_metric(metric_key):
+        values = [
+            value
+            for value in (_coerce_score_value(workout.get(metric_key)) for workout in workouts)
+            if value is not None
+        ]
+        return round(sum(values) / len(values), 1) if values else None
+
+    return {
+        "title": title,
+        "teamId": team_id,
+        "teamName": team_name,
+        "memberCount": member_count,
+        "workoutCount": len(workouts),
+        "averageScore": _average_metric("workoutScore"),
+        "averageConsistencyScore": _average_metric("workoutScore"),
+        "averageArmsScore": _average_metric("armsStraightScore"),
+        "averageBackScore": _average_metric("backStraightScore"),
+        "points": points,
+        "emptyState": empty_state,
+    }
+
+
+def _collect_weekly_workouts(
+    workouts,
+    *,
+    window_start,
+    window_end,
+    display_name,
+    user_id=None,
+    current_user_id=None,
+    include_current_user_flag=False,
+):
+    weekly_workouts = []
+    points = []
+
+    for workout in workouts:
+        completed_at = _get_workout_completed_at(workout)
+        if completed_at is None or completed_at < window_start or completed_at > window_end:
+            continue
+
+        weekly_workouts.append(workout)
+        score = _get_workout_composite_score(workout)
+        if score is None:
+            continue
+
+        point = {
+            "workoutId": workout.get("workoutId"),
+            "completedAt": completed_at.isoformat(),
+            "score": round(score, 2),
+            "consistencyScore": _coerce_score_value(workout.get("workoutScore")),
+            "armsScore": _coerce_score_value(workout.get("armsStraightScore")),
+            "backScore": _coerce_score_value(workout.get("backStraightScore")),
+            "displayName": display_name,
+            "userId": user_id,
+        }
+        if include_current_user_flag:
+            point["isCurrentUser"] = user_id == current_user_id
+        points.append(point)
+
+    points.sort(key=lambda item: item["completedAt"])
+    return weekly_workouts, points
 
 
 def _resolve_recording_user_id(data):
@@ -1140,6 +1240,123 @@ def current_team():
         "members": members,
         "memberRole": membership.get("memberRole"),
         "nextCursor": _encode_cursor(next_key),
+    })
+
+
+@api_bp.route("/team/stats/weekly", methods=["GET"])
+def weekly_team_stats():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    window_end = _now_utc()
+    window_start = window_end - timedelta(days=7)
+
+    try:
+        users_table, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        profile = fetch_user_profile(user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load account profile", "detail": str(err)}), 500
+
+    display_name = (
+        profile.get("name")
+        or session.get("user_name")
+        or session.get("user_email")
+        or user_id
+        or "Current user"
+    )
+
+    try:
+        membership = get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team membership", "detail": str(err)}), 500
+
+    try:
+        user_workouts = list_workouts(workouts_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load workouts", "detail": str(err)}), 500
+
+    weekly_user_workouts, user_points = _collect_weekly_workouts(
+        user_workouts,
+        window_start=window_start,
+        window_end=window_end,
+        display_name=display_name,
+        user_id=user_id,
+        current_user_id=user_id,
+    )
+    user_summary = _build_weekly_summary(display_name, weekly_user_workouts, user_points)
+
+    team_summary = _build_weekly_summary(
+        "No team yet",
+        [],
+        [],
+        empty_state="Join or create a team to see team-wide weekly scores.",
+    )
+
+    if membership:
+        team_id = membership.get("teamId")
+        try:
+            team = get_team(teams_table, team_id)
+            members = fetch_team_members(
+                users_table,
+                team_members_table,
+                team_id,
+                ALLOWED_TEAM_ROLES,
+            )
+        except Exception as err:
+            return jsonify({"error": "Unable to load team details", "detail": str(err)}), 500
+
+        team_name = (team or {}).get("teamName") or "Current team"
+        team_points = []
+        team_workouts = []
+        for member in members:
+            member_user_id = member.get("userId")
+            if not member_user_id:
+                continue
+
+            member_display_name = member.get("name") or member_user_id
+            try:
+                member_workouts = list_workouts(workouts_table, member_user_id)
+            except Exception as err:
+                return jsonify({
+                    "error": "Unable to load team workouts",
+                    "detail": str(err),
+                }), 500
+
+            weekly_member_workouts, member_points = _collect_weekly_workouts(
+                member_workouts,
+                window_start=window_start,
+                window_end=window_end,
+                display_name=member_display_name,
+                user_id=member_user_id,
+                current_user_id=user_id,
+                include_current_user_flag=True,
+            )
+            team_workouts.extend(weekly_member_workouts)
+            team_points.extend(member_points)
+
+        team_points.sort(key=lambda item: item["completedAt"])
+        team_summary = _build_weekly_summary(
+            team_name,
+            team_workouts,
+            team_points,
+            team_id=team_id,
+            team_name=team_name,
+            member_count=len(members),
+            empty_state="No team workouts with scores were recorded in this window.",
+        )
+
+    return jsonify({
+        "windowStart": window_start.isoformat(),
+        "windowEnd": window_end.isoformat(),
+        "user": user_summary,
+        "team": team_summary,
     })
 
 
