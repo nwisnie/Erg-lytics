@@ -360,6 +360,37 @@ def test_list_recordings_page_applies_created_at_range(
     )
 
 
+def test_list_workouts_page_applies_completed_at_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_query_page(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return ["workout"], {"cursor": "next"}
+
+    monkeypatch.setattr(dynamodb, "query_page", fake_query_page)
+
+    result = dynamodb.list_workouts_page(
+        MagicMock(),
+        "u1",
+        limit=8,
+        completed_from="2026-04-05T04:00:00.000Z",
+        completed_to="2026-04-06T03:59:59.999Z",
+    )
+
+    assert result == (["workout"], {"cursor": "next"})
+    condition = captured["KeyConditionExpression"].get_expression()
+    assert condition["operator"] == "AND"
+    date_condition = condition["values"][1].get_expression()
+    assert date_condition["operator"] == "BETWEEN"
+    assert date_condition["values"][1:] == (
+        "2026-04-05T04:00:00.000Z",
+        "2026-04-06T03:59:59.999Z",
+    )
+
+
 def test_sum_recording_durations_for_utc_date_uses_created_at_index(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

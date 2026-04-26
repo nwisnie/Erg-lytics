@@ -1081,6 +1081,27 @@ def _parse_recording_date_range(
     return parsed_from.isoformat(), parsed_to.isoformat()
 
 
+def _parse_workout_date_range(
+    completed_from: str | None,
+    completed_to: str | None,
+) -> tuple[str | None, str | None]:
+    if not completed_from and not completed_to:
+        return None, None
+    if not completed_from or not completed_to:
+        raise ValueError("completedFrom and completedTo must be provided together")
+
+    parsed_from = _parse_iso_datetime(completed_from)
+    parsed_to = _parse_iso_datetime(completed_to)
+    if parsed_from is None or parsed_to is None:
+        raise ValueError("completedFrom and completedTo must be valid ISO datetimes")
+    if parsed_to < parsed_from:
+        raise ValueError("completedTo must be after completedFrom")
+    return (
+        parsed_from.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        parsed_to.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    )
+
+
 def _numeric_or_none(value):
     if value is None:
         return None
@@ -2185,6 +2206,10 @@ def list_workouts_for_current_user():
     try:
         limit = _parse_limit(request.args.get("limit"), WORKOUTS_PAGE_SIZE)
         cursor = _decode_cursor(request.args.get("cursor"))
+        completed_from, completed_to = _parse_workout_date_range(
+            request.args.get("completedFrom"),
+            request.args.get("completedTo"),
+        )
     except ValueError as err:
         return jsonify({"error": str(err)}), 400
 
@@ -2200,6 +2225,8 @@ def list_workouts_for_current_user():
             user_id,
             limit=limit,
             exclusive_start_key=cursor,
+            completed_from=completed_from,
+            completed_to=completed_to,
         )
     except Exception as err:
         logger.error("GET /workouts: failed to load workouts: %s", err, exc_info=True)

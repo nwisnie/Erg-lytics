@@ -539,11 +539,22 @@ def list_workouts(workouts_table, user_id: str):
         )
 
 
-def list_workouts_page(workouts_table, user_id: str, limit: int, exclusive_start_key=None):
+def list_workouts_page(
+    workouts_table,
+    user_id: str,
+    limit: int,
+    exclusive_start_key=None,
+    completed_from: str | None = None,
+    completed_to: str | None = None,
+):
+    key_condition = Key("userId").eq(user_id)
+    if completed_from and completed_to:
+        key_condition = key_condition & Key("completedAt").between(completed_from, completed_to)
+
     return query_page(
         workouts_table,
         IndexName=WORKOUTS_COMPLETED_AT_INDEX,
-        KeyConditionExpression=Key("userId").eq(user_id),
+        KeyConditionExpression=key_condition,
         ScanIndexForward=False,
         limit=limit,
         exclusive_start_key=exclusive_start_key,
