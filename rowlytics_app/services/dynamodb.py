@@ -434,11 +434,22 @@ def list_recordings(recordings_table, user_id: str):
         return sorted(items, key=lambda item: item.get("createdAt") or "", reverse=True)
 
 
-def list_recordings_page(recordings_table, user_id: str, workout_id: str
-                         , limit: int, exclusive_start_key=None):
+def list_recordings_page(
+    recordings_table,
+    user_id: str,
+    workout_id: str,
+    limit: int,
+    exclusive_start_key=None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+):
+    key_condition = Key("userId").eq(user_id)
+    if created_from and created_to:
+        key_condition = key_condition & Key("createdAt").between(created_from, created_to)
+
     kwargs = {
         "IndexName": RECORDINGS_CREATED_AT_INDEX,
-        "KeyConditionExpression": Key("userId").eq(user_id),
+        "KeyConditionExpression": key_condition,
         "ScanIndexForward": False,
 
     }
