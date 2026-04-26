@@ -1063,6 +1063,108 @@ def _decode_cursor(cursor: str | None) -> dict | None:
     return payload
 
 
+def _numeric_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        normalized = value.strip().rstrip("%")
+        if not normalized or normalized.lower() in {"n/a", "none", "null"}:
+            return None
+        try:
+            return float(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_alignment_details(details: str | None) -> dict[str, str]:
+    if not details:
+        return {}
+
+    parsed = {}
+    for line in details.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower()
+        if normalized_key:
+            parsed[normalized_key] = value.strip()
+    return parsed
+
+
+def _workout_metric_value(workout: dict, field_name: str, *detail_keys: str):
+    value = _numeric_or_none(workout.get(field_name))
+    if value is not None:
+        return value
+
+    details = _parse_alignment_details(workout.get("alignmentDetails"))
+    for detail_key in detail_keys:
+        value = _numeric_or_none(details.get(detail_key))
+        if value is not None:
+            return value
+    return None
+
+
+def _summarize_team_workouts(workouts_table, memberships: list[dict]) -> dict:
+    user_ids = sorted({item.get("userId") for item in memberships if item.get("userId")})
+    metrics = {
+        "consistencyScore": {
+            "field": "workoutScore",
+            "detail_keys": ("consistency score", "score"),
+            "sum": 0.0,
+            "count": 0,
+        },
+        "armsStraightScore": {
+            "field": "armsStraightScore",
+            "detail_keys": ("arms straight score",),
+            "sum": 0.0,
+            "count": 0,
+        },
+        "backStraightScore": {
+            "field": "backStraightScore",
+            "detail_keys": ("back straight score",),
+            "sum": 0.0,
+            "count": 0,
+        },
+    }
+    workout_count = 0
+
+    for user_id in user_ids:
+        for workout in list_workouts(workouts_table, user_id):
+            workout_count += 1
+            for metric in metrics.values():
+                value = _workout_metric_value(
+                    workout,
+                    metric["field"],
+                    *metric["detail_keys"],
+                )
+                if value is None:
+                    continue
+                metric["sum"] += value
+                metric["count"] += 1
+
+    return {
+        "memberCount": len(user_ids),
+        "workoutCount": workout_count,
+        "metrics": {
+            name: {
+                "average": (
+                    round(metric["sum"] / metric["count"], 2)
+                    if metric["count"]
+                    else None
+                ),
+                "count": metric["count"],
+            }
+            for name, metric in metrics.items()
+        },
+        "unavailableReason": None,
+    }
+
+
 @api_bp.route("/health", methods=["GET"])
 def health_check():
     """Simple health check endpoint - no auth required to test API connectivity."""
@@ -1188,6 +1290,7 @@ def current_team():
         cursor = _decode_cursor(request.args.get("cursor"))
     except ValueError as err:
         return jsonify({"error": str(err)}), 400
+    include_stats = request.args.get("includeStats", "true").lower() != "false"
 
     try:
         users_table, team_members_table = get_ddb_tables()
@@ -1234,13 +1337,42 @@ def current_team():
         logger.error(f"GET /team/current: failed to load team members: {err}", exc_info=True)
         return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
 
-    return jsonify({
+    payload = {
         "teamId": team_id,
         "teamName": (team or {}).get("teamName"),
         "members": members,
         "memberRole": membership.get("memberRole"),
         "nextCursor": _encode_cursor(next_key),
-    })
+    }
+
+    if not include_stats:
+        return jsonify(payload)
+
+    team_stats = {
+        "memberCount": len(members),
+        "workoutCount": 0,
+        "metrics": {
+            "consistencyScore": {"average": None, "count": 0},
+            "armsStraightScore": {"average": None, "count": 0},
+            "backStraightScore": {"average": None, "count": 0},
+        },
+        "unavailableReason": None,
+    }
+    try:
+        workouts_table = get_workouts_table()
+        memberships = list_team_members_by_team(team_members_table, team_id)
+        team_stats = _summarize_team_workouts(workouts_table, memberships)
+    except Exception as err:
+        logger.warning(
+            "GET /team/current: unable to load team workout stats for %s: %s",
+            team_id,
+            err,
+            exc_info=True,
+        )
+        team_stats["unavailableReason"] = "Unable to load team workout stats"
+
+    payload["teamStats"] = team_stats
+    return jsonify(payload)
 
 
 @api_bp.route("/team/stats/weekly", methods=["GET"])
