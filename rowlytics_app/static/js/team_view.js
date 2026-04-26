@@ -1,12 +1,7 @@
 (() => {
   const PAGE_SIZE = 20;
 
-  const getApiUrl = (path) => {
-    const currentPath = window.location.pathname;
-    const match = currentPath.match(/^(\/[^/]+)?/);
-    const stagePath = match ? match[0] : "";
-    return stagePath + path;
-  };
+  const getApiUrl = (path) => path;
 
   const joinSection = document.getElementById("teamJoinSection");
   const activeSection = document.getElementById("teamActiveSection");
