@@ -112,10 +112,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 4000;
+const formBadDurationMs = 8000;
 const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 100;
-const backStraightThreshold = 100;
+const armsStraightThreshold = 75;
+const backStraightThreshold = 75;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
