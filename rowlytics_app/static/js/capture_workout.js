@@ -112,10 +112,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 12000;
+const formBadDurationMs = 4000;
 const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 70;
-const backStraightThreshold = 70;
+const armsStraightThreshold = 100;
+const backStraightThreshold = 100;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
@@ -135,8 +135,24 @@ Object.values(audioClips).forEach((clip) => {
 const audioQueue = [];
 let audioPlaying = false;
 
-function playAudio(key) {
-  if (!audioClips[key]) return;
+function playAudio(key, { queued = true } = {}) {
+  const clip = audioClips[key];
+  if (!clip) return;
+
+  if (!queued) {
+    audioQueue.length = 0;
+    audioPlaying = false;
+
+    Object.values(audioClips).forEach((audio) => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+
+    clip.play().catch((err) => {
+      console.warn(`Could not play audio "${key}":`, err);
+    });
+    return;
+  }
 
   audioQueue.push(key);
   playNextAudio();
@@ -1403,7 +1419,7 @@ async function startCamera() {
   if (running) {
     requestAnimationFrame(loop);
   }
-  playAudio("readyToBegin");
+  playAudio("readyToBegin", { queued: false });
   readyToBeginPromptPlayed = true;
 
 }
@@ -1625,7 +1641,7 @@ function loop() {
           frameTime >= noAthleteDelayMs &&
           frameTime - lastNoAthletePromptAtMs >= noAthleteRepeatMs
         ) {
-          playAudio("noAthleteDetected");
+          playAudio("noAthleteDetected", { queued: false });
           lastNoAthletePromptAtMs = frameTime;
           noAthletePromptPlayed = true;
         }
@@ -1633,7 +1649,7 @@ function loop() {
         noAthletePromptPlayed = false;
 
         if (!bodyInFramePromptPlayed) {
-          playAudio("bodyInFrame");
+          playAudio("bodyInFrame", { queued: false });
           bodyInFramePromptPlayed = true;
         }
       }
