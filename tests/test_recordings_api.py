@@ -127,6 +127,56 @@ def test_save_recording_metadata_uses_session_user_and_normalizes_fields(
     assert item["createdAt"] == "2026-04-05T10:15:30+00:00"
 
 
+def test_workout_summary_snapshot_clips_returns_presigned_playback_urls(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id = "user-123"
+    workout_id = "workout-abc"
+
+    recordings_table = MagicMock()
+    fake_recordings = [
+        {
+            "recordingId": "clip-1",
+            "userId": user_id,
+            "workoutId": workout_id,
+            "objectKey": "recordings/user-123/clip-1.webm",
+            "contentType": "video/webm",
+            "createdAt": "2026-04-26T12:01:00+00:00",
+            "durationSec": 4,
+        },
+        {
+            "recordingId": "clip-2",
+            "userId": user_id,
+            "workoutId": workout_id,
+            "objectKey": "recordings/user-123/clip-2.webm",
+            "contentType": "video/webm",
+            "createdAt": "2026-04-26T12:02:00+00:00",
+            "durationSec": 6,
+        },
+    ]
+
+    def fake_list_recordings_page(
+        table,
+        *,
+        user_id,
+        limit,
+        exclusive_start_key=None,
+        workout_id=None,
+    ):
+        assert table is recordings_table
+        assert user_id == "user-123"
+        assert workout_id == "workout-abc"
+        assert limit == 8
+        assert exclusive_start_key is None
+        return fake_recordings, None
+
+    s3_client = MagicMock()
+    s3_client.generate_presigned_url.side_effect = (
+        lambda _operation, Params, ExpiresIn: f"https://example.com/{Params['Key']}"
+    )
+
+
 def test_list_recordings_for_user_passes_created_at_range(
     client: FlaskClient,
     monkeypatch: pytest.MonkeyPatch,

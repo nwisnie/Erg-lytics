@@ -15,21 +15,21 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_auth.py` | `pytest` | 20 | Cognito token parsing, login URL generation, token exchange, token expiry, user deletion, and session helpers |
 | `tests/test_deviation.py` | `pytest` | 26 | Skeletal deviation math helpers, limb/torso deviation scoring, midpoint handling, and full pose comparison |
 | `tests/test_display_name_flow.py` | `pytest` | 6 | Display-name onboarding, auth callback redirects, gated navigation, and account-name updates |
-| `tests/test_dynamodb.py` | `pytest` | 52 | DynamoDB resource/table access, profile sync, memberships, recordings/workouts date queries, name uniqueness, and identifier resolution |
+| `tests/test_dynamodb.py` | `pytest` | 62 | DynamoDB resource/table access, profile sync, memberships, recordings/workouts date queries, name uniqueness, and identifier resolution |
 | `tests/test_email_integration.py` | `pytest` | 1 | End-to-end `/test-email` route integration with the mock email pipeline |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior for missing config, success, and failure paths |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and API Gateway stage-prefix header injection |
 | `tests/test_mock_email.py` | `pytest` | 4 | Mock email composition, default-name fallback, content generation, and send-error propagation |
-| `tests/test_recordings_api.py` | `pytest` | 5 | Recording upload guardrails, daily duration limits, metadata normalization, and date-range filtering |
+| `tests/test_recordings_api.py` | `pytest` | 6 | Recording upload guardrails, daily duration limits, metadata normalization, and date-range filtering |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `tests/test_team_stats_api.py` | `pytest` | 3 | Weekly team statistics route auth checks, user/team aggregate responses, and empty team-state handling |
-| `tests/test_workout_api.py` | `pytest` | 11 | Workout validation, score persistence, date-range filtering, team summary aggregation, and posture scoring helpers |
+| `tests/test_workout_api.py` | `pytest` | 12 | Workout validation, score persistence, date-range filtering, team summary aggregation, and posture scoring helpers |
 | `tests/test_workout_save_integration.py` | `pytest` | 1 | Integration coverage for the workout save API route, verifying workout analysis fields are persisted through the real route/save flow while mocking only the external DynamoDB resource layer |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 177 tests
+Current automated inventory total: 189 tests
 
-- Pytest total: 175 tests
+- Pytest total: 187 tests
 - Playwright total: 2 tests
 
 ## Pytest Inventory
@@ -128,7 +128,7 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
 - `test_clip_threshold_rejection_behavior`
   Confirms capture-workout save gating rejects clips when the score is missing or above the threshold and allows saves when the score is within the accepted range.
 
-### `tests/test_dynamodb.py` (36 tests)
+### `tests/test_dynamodb.py` (62 tests)
 
 - Utility and client/resource setup:
   `test_now_iso_returns_timezone_aware_isoformat`, `test_get_resource_requires_boto3`, `test_get_resource_uses_boto3_resource`
@@ -141,9 +141,15 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
 - Team member assembly and membership lookup:
   `test_fetch_team_members_merges_users_and_normalizes_roles`, `test_get_team_membership_returns_first_item`, `test_get_team_membership_returns_none_when_missing`, `test_get_team_membership_fallbacks_to_scan_on_validation_error`, `test_get_team_membership_reraises_unexpected_client_error`
 - Team lookup:
-  `test_get_team_returns_item`, `test_get_team_returns_none_when_not_found`, `test_get_team_propagates_errors`
+  `test_get_team_returns_item`, `test_get_team_returns_none_when_not_found`, `test_get_team_propagates_errors`, `test_fetch_team_members_page_merges_users_and_normalizes_roles`
 - Pagination helpers:
-  `test_query_all_handles_multiple_pages`, `test_scan_all_handles_multiple_pages`
+  `test_query_all_handles_multiple_pages`, `test_scan_all_handles_multiple_pages`,
+  `test_query_page_returns_items_and_last_evaluated_key`,
+  `test_query_page_with_exclusive_start_key`,
+  `test_query_page_handles_missing_last_evaluated_key`,
+  `test_query_page_handles_no_items`,
+  `test_list_recordings_page_calls_query_page`,
+  `test_list_workouts_page_calls_query_page`
 - Membership and ownership listing:
   `test_list_team_memberships_uses_query_all`, `test_list_team_memberships_falls_back_to_scan_on_validation_error`, `test_list_team_members_by_team_delegates_to_query_all`, `test_list_owned_teams_returns_empty_when_attr_missing`, `test_list_owned_teams_calls_scan_all`, `test_list_recordings_delegates_to_query_all`, `test_query_all_returns_empty_list`
 - Team name existence checks:
@@ -265,7 +271,7 @@ This suite covers mock email generation in `rowlytics_app.services.mock_email`:
 - presence of expected personal/team statistics and app URL content
 - propagation of email send errors
 
-### `tests/test_recordings_api.py` (5 tests)
+### `tests/test_recordings_api.py` (6 tests)
 
 This suite covers recording upload API guardrails:
 
@@ -291,7 +297,7 @@ This suite covers team statistics API behavior:
 - empty team-stat responses when the current user is not on a team
 - weekly score point filtering and ordering for team chart data
 
-### `tests/test_workout_api.py` (11 tests)
+### `tests/test_workout_api.py` (12 tests)
 
 This suite covers workout API validation and scoring helpers:
 

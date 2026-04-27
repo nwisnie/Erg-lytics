@@ -6,8 +6,19 @@ from unittest.mock import MagicMock
 
 import pytest
 from botocore.exceptions import ClientError
+from flask import Flask
 
 import rowlytics_app.services.dynamodb as dynamodb
+
+
+@pytest.fixture
+def client():
+    from rowlytics_app.api_routes import api_bp
+    app = Flask(__name__)
+    app.register_blueprint(api_bp)
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        yield client
 
 
 def make_client_error(code: str) -> ClientError:
@@ -265,6 +276,33 @@ def test_scan_all_handles_multiple_pages() -> None:
     result = dynamodb.scan_all(table, FilterExpression=MagicMock())
     assert result == [{"id": 1}, {"id": 2}]
     assert table.scan.call_count == 2
+
+
+def test_scan_all_handles_empty_items() -> None:
+    table = MagicMock()
+    table.scan.return_value = {"Items": []}
+    result = dynamodb.scan_all(table)
+    assert result == []
+    table.scan.assert_called_once()
+
+
+def test_scan_all_handles_exception() -> None:
+    table = MagicMock()
+    table.scan.side_effect = Exception("scan error")
+    with pytest.raises(Exception):
+        dynamodb.scan_all(table)
+
+
+def test_scan_all_handles_multiple_batches() -> None:
+    table = MagicMock()
+    table.scan.side_effect = [
+        {"Items": [1], "LastEvaluatedKey": "token1"},
+        {"Items": [2], "LastEvaluatedKey": "token2"},
+        {"Items": [3]},
+    ]
+    result = dynamodb.scan_all(table)
+    assert result == [1, 2, 3]
+    assert table.scan.call_count == 3
 
 
 def test_list_team_memberships_uses_query_all(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -580,3 +618,109 @@ def test_query_all_returns_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
 
     result = dynamodb.query_all(table, KeyConditionExpression=MagicMock())
     assert result == []
+
+
+def test_query_page_returns_items_and_last_evaluated_key() -> None:
+    table = MagicMock()
+    table.query.return_value = {"Items": [1, 2, 3], "LastEvaluatedKey": "token"}
+    items, last_key = dynamodb.query_page(table, limit=3)
+    assert items == [1, 2, 3]
+    assert last_key == "token"
+    table.query.assert_called_once()
+
+
+def test_query_page_with_exclusive_start_key() -> None:
+    table = MagicMock()
+    table.query.return_value = {"Items": [4, 5], "LastEvaluatedKey": None}
+    items, last_key = dynamodb.query_page(table, limit=2, exclusive_start_key="token")
+    assert items == [4, 5]
+    assert last_key is None
+    table.query.assert_called_once()
+    assert table.query.call_args[1]["ExclusiveStartKey"] == "token"
+
+
+def test_query_page_handles_missing_last_evaluated_key() -> None:
+    table = MagicMock()
+    table.query.return_value = {"Items": [7, 8]}
+    items, last_key = dynamodb.query_page(table, limit=2)
+    assert items == [7, 8]
+    assert last_key is None
+
+
+def test_query_page_handles_no_items() -> None:
+    table = MagicMock()
+    table.query.return_value = {"Items": [], "LastEvaluatedKey": None}
+    items, last_key = dynamodb.query_page(table, limit=1)
+    assert items == []
+    assert last_key is None
+
+
+def test_list_recordings_page_calls_query_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = {}
+
+    def fake_query_page(table, *, limit, exclusive_start_key=None, **kwargs):
+        called.update({"table": table, "limit": limit, "exclusive_start_key":
+                       exclusive_start_key, **kwargs})
+        return ([{"id": 1}], "token")
+    monkeypatch.setattr(dynamodb, "query_page", fake_query_page)
+    table = MagicMock()
+    items, last_key = dynamodb.list_recordings_page(table, "u1", "w1", 5,
+                                                    exclusive_start_key="token0")
+    assert items == [{"id": 1}]
+    assert last_key == "token"
+    assert called["limit"] == 5
+    assert called["exclusive_start_key"] == "token0"
+    assert called["IndexName"] == dynamodb.RECORDINGS_CREATED_AT_INDEX
+    assert called["KeyConditionExpression"] is not None
+
+
+def test_list_workouts_page_calls_query_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    called = {}
+
+    def fake_query_page(table, **kwargs):
+        called.update(kwargs)
+        return ([{"id": 2}], "token2")
+    monkeypatch.setattr(dynamodb, "query_page", fake_query_page)
+    table = MagicMock()
+    items, last_key = dynamodb.list_workouts_page(table, "u2", 10, exclusive_start_key="token1")
+    assert items == [{"id": 2}]
+    assert last_key == "token2"
+    assert called["limit"] == 10
+    assert called["exclusive_start_key"] == "token1"
+    assert called["IndexName"] == dynamodb.WORKOUTS_COMPLETED_AT_INDEX
+    assert called["KeyConditionExpression"] is not None
+
+
+def test_fetch_team_members_page_merges_users_and_normalizes_roles(monkeypatch:
+                                                                   pytest.MonkeyPatch) -> None:
+    team_members_table = MagicMock()
+    team_members_table.query.return_value = {
+        "Items": [
+            {"userId": "u1", "memberRole": "Coach", "joinedAt": "2024-01-01"},
+            {"userId": "u2", "memberRole": "admin", "joinedAt": "2024-01-02"},
+            {"userId": "u3", "memberRole": None, "joinedAt": "2024-01-03"},
+        ],
+        "LastEvaluatedKey": "token"
+    }
+    users_by_id = {
+        "u1": {"name": "Coach User", "email": "c@example.com"},
+        "u2": {"name": "Admin User", "email": "a@example.com"},
+    }
+    monkeypatch.setattr(dynamodb, "batch_get_users", lambda _table, ids: users_by_id)
+    users_table = MagicMock()
+    members, last_key = dynamodb.fetch_team_members_page(
+        users_table=users_table,
+        team_members_table=team_members_table,
+        team_id="team1",
+        allowed_roles={"coach", "rower"},
+        limit=3,
+        exclusive_start_key="token0",
+    )
+    assert members[0]["memberRole"] == "coach"
+    assert members[1]["memberRole"] == "rower"
+    assert members[2]["memberRole"] == "rower"
+    assert members[0]["email"] == "c@example.com"
+    assert last_key == "token"
+    team_members_table.query.assert_called_once()
+    assert team_members_table.query.call_args[1]["ExclusiveStartKey"] == "token0"
+    assert team_members_table.query.call_args[1]["Limit"] == 3
