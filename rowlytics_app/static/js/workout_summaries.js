@@ -8,6 +8,7 @@
   const recMessage = document.getElementById("recordingsworkMessage");
   const recLoadMoreBtn = document.getElementById("recordingsLoadMore");
   const userId = document.body?.dataset?.userId;
+  const workoutDetailBase = document.body?.dataset?.workoutDetailBase || "";
 
   if (!workGrid || !workMessage || !recGrid || !recMessage) return;
 
@@ -71,8 +72,65 @@
     return mins ? `${mins}m ${secs}s` : `${secs}s`;
   };
 
-  const workRenderEmpty = () => {
-    workGrid.innerHTML = "";
+  const asNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parseAlignmentDetails = (details) => {
+    const parsed = {};
+    (details || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .forEach((line) => {
+        const separatorIndex = line.indexOf(":");
+        if (separatorIndex < 0) return;
+        const key = line.slice(0, separatorIndex).trim().toLowerCase();
+        const value = line.slice(separatorIndex + 1).trim();
+        parsed[key] = value;
+      });
+    return parsed;
+  };
+
+  const getWorkoutMetrics = (workout) => {
+    const parsedDetails = parseAlignmentDetails(workout.alignmentDetails);
+    return {
+      score: asNumber(workout.workoutScore)
+        ?? asNumber(parsedDetails["consistency score"])
+        ?? asNumber(parsedDetails.score),
+      armsStraightScore: asNumber(workout.armsStraightScore)
+        ?? asNumber(parsedDetails["arms straight score"]),
+      backStraightScore: asNumber(workout.backStraightScore)
+        ?? asNumber(parsedDetails["back straight score"]),
+      summary: workout.summary || parsedDetails.summary || "No summary provided.",
+      strokeCount: asNumber(workout.strokeCount) ?? asNumber(parsedDetails["stroke count"]),
+      cadenceSpm: asNumber(workout.cadenceSpm) ?? asNumber(parsedDetails["cadence (spm)"]),
+      rangeOfMotion: asNumber(workout.rangeOfMotion) ?? asNumber(parsedDetails["range of motion"]),
+      dominantSide: workout.dominantSide || parsedDetails["dominant side"] || "",
+      signalStrategy: parsedDetails["signal strategy"] || "",
+    };
+  };
+
+  const buildMetricRow = (labelText, valueText, subtle = false) => {
+    const row = document.createElement("p");
+    row.className = subtle ? "workout-card__metric workout-card__metric--subtle" : "workout-card__metric";
+
+    const label = document.createElement("span");
+    label.className = "workout-card__metric-label";
+    label.textContent = `${labelText}:`;
+
+    const value = document.createElement("span");
+    value.className = "workout-card__metric-value";
+    value.textContent = valueText;
+
+    row.appendChild(label);
+    row.appendChild(value);
+    return row;
+  };
+
+  const renderEmpty = () => {
+    grid.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "recordings-empty";
     empty.textContent = "No workouts yet. Start a session to see it here.";
@@ -98,6 +156,13 @@
       const card = document.createElement("article");
       card.className = "recording-card workout-card";
 
+      card.style.cursor = "pointer";
+
+      card.addEventListener("click", () => {
+        const detailUrl = workoutDetailBase.replace("__WORKOUT_ID__", workout.workoutId);
+        window.location.href = detailUrl || `/workout-summaries/${workout.workoutId}`;
+      });
+
       const header = document.createElement("div");
       header.className = "workout-card__row";
       const title = document.createElement("h3");
@@ -109,8 +174,6 @@
       header.appendChild(title);
       header.appendChild(duration);
 
-      const summary = document.createElement("p");
-      summary.className = "workout-card__summary";
       const metrics = getWorkoutMetrics(workout);
 
       const score = document.createElement("p");
@@ -123,39 +186,28 @@
         score.textContent = `${Math.round(metrics.score)}% consistency`;
       }
 
-      summary.textContent = metrics.score == null
-        ? "Consistency score could not be calculated because not enough strokes were taken."
-        : metrics.summary;
+      const armScore = buildMetricRow(
+        "Arms straight",
+        metrics.armsStraightScore == null ? "Not available" : `${Math.round(metrics.armsStraightScore)}%`,
+        true,
+      );
 
-      const metricList = document.createElement("div");
-      metricList.className = "workout-card__metrics";
-      metricList.appendChild(buildMetricRow(
-        "Stroke count",
-        metrics.strokeCount == null ? "Not detected" : String(metrics.strokeCount),
-      ));
-      metricList.appendChild(buildMetricRow(
-        "Cadence",
-        metrics.cadenceSpm == null ? "Not available" : `${metrics.cadenceSpm.toFixed(1)} spm`,
-      ));
-      metricList.appendChild(buildMetricRow(
-        "Range of motion",
-        metrics.rangeOfMotion == null ? "Not available" : metrics.rangeOfMotion.toFixed(3),
-      ));
+      const backScore = buildMetricRow(
+        "Back straight",
+        metrics.backStraightScore == null ? "Not available" : `${Math.round(metrics.backStraightScore)}%`,
+        true,
+      );
 
-      if (metrics.dominantSide) {
-        metricList.appendChild(buildMetricRow("Dominant side", metrics.dominantSide, true));
-      }
-      if (metrics.signalStrategy) {
-        metricList.appendChild(buildMetricRow(
-          "Signal",
-          metrics.signalStrategy.replaceAll("_", " "),
-          true,
-        ));
-      }
+      const preview = document.createElement("p");
+      preview.className = "workout-card__summary";
+      preview.textContent = "Click to view full workout summary →";
 
       card.appendChild(header);
       card.appendChild(score);
-      workGrid.appendChild(card);
+      card.appendChild(armScore);
+      card.appendChild(backScore);
+      card.appendChild(preview);
+      grid.appendChild(card);
     });
   };
 

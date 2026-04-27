@@ -18,7 +18,7 @@ def create_app() -> Flask:
     # Initialize logging first
     setup_logging(app)
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1, x_prefix=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
     app.config.from_mapping(
         SECRET_KEY=os.getenv("ROWLYTICS_SECRET_KEY", "dev-secret-key"),
         ROWLYTICS_ENV=os.getenv("ROWLYTICS_ENV", "development"),
@@ -66,7 +66,7 @@ def create_app() -> Flask:
         )
         if not app.config.get("AUTH_REQUIRED"):
             return None
-        if request.path.startswith("/static/"):
+        if request.endpoint == "static" or "/static/" in request.path:
             return None
         if request.endpoint in {
             "public.signin",
@@ -84,6 +84,11 @@ def create_app() -> Flask:
             return None
         if not session.get("user_id"):
             return redirect(url_for("public.signin"))
+        if (
+            session.get("display_name_required")
+            and request.endpoint != "public.display_name_setup"
+        ):
+            return redirect(url_for("public.display_name_setup"))
         return None
 
     app.register_blueprint(public_bp)

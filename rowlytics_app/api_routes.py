@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from uuid import uuid4
 
@@ -19,20 +19,28 @@ from rowlytics_app.auth.cognito import delete_cognito_user
 from rowlytics_app.cv.alignment import PracticeStrokeAssembler
 from rowlytics_app.cv.feature_extraction.angles import normalized_joint_angle
 from rowlytics_app.services.dynamodb import (
+    display_name_exists,
     fetch_team_members,
     fetch_team_members_page,
     fetch_user_profile,
     get_ddb_tables,
     get_recordings_table,
     get_team,
+    get_team_by_name,
     get_team_membership,
     get_teams_table,
+    get_workout_for_user,
     get_workouts_table,
     list_recordings,
     list_recordings_page,
+    list_team_members_by_team,
     list_team_memberships,
+    list_workouts,
     list_workouts_page,
+    normalize_display_name,
     now_iso,
+    resolve_user_by_identifier,
+    sum_recording_durations_for_utc_date,
     team_name_exists,
 )
 from rowlytics_app.services.s3 import UPLOAD_BUCKET_NAME, get_s3_client
@@ -119,7 +127,16 @@ ANGLE_MIN_STROKE_AMPLITUDE = 0.006
 ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
 MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
 MOTION_SPIKE_BASE_DELTA = 0.075
+ARMS_STRAIGHT_PROGRESS_MAX = 0.8
+ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG = 30.0
+ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG = 78.0
+ARMS_STRAIGHT_MIN_POINTS = 3
+BACK_STRAIGHT_PROGRESS_MAX = 0.9
+BACK_STRAIGHT_FULL_CREDIT_DEG = 132.0
+BACK_STRAIGHT_ZERO_CREDIT_DEG = 88.0
+BACK_STRAIGHT_MIN_POINTS = 3
 MAX_WORKOUT_DURATION_SEC = 60 * 60
+MAX_DAILY_RECORDING_UPLOAD_SEC = 2 * 60 * 60
 
 
 class MovementGateError(ValueError):
@@ -133,6 +150,187 @@ def _coerce_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _coerce_positive_duration_seconds(value):
+    duration = _coerce_float(value)
+    if duration is None or duration <= 0:
+        return None
+    return int(round(duration))
+
+
+def _parse_iso_datetime(value):
+    if not isinstance(value, str):
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if candidate.endswith("Z"):
+        candidate = f"{candidate[:-1]}+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _normalize_event_timestamp(value):
+    parsed = _parse_iso_datetime(value)
+    if parsed is None:
+        parsed = _now_utc()
+    return parsed.isoformat(), parsed
+
+
+def _coerce_score_value(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _get_workout_completed_at(item):
+    return _parse_iso_datetime(item.get("completedAt") or item.get("createdAt"))
+
+
+def _get_workout_composite_score(item):
+    metric_keys = ("workoutScore", "armsStraightScore", "backStraightScore")
+    values = [
+        value
+        for value in (_coerce_score_value(item.get(metric_key)) for metric_key in metric_keys)
+        if value is not None
+    ]
+    return round(sum(values) / len(values), 2) if values else None
+
+
+def _build_weekly_summary(
+    title,
+    workouts,
+    points,
+    *,
+    team_id=None,
+    team_name=None,
+    member_count=None,
+    empty_state=None,
+):
+    def _average_metric(metric_key):
+        values = [
+            value
+            for value in (_coerce_score_value(workout.get(metric_key)) for workout in workouts)
+            if value is not None
+        ]
+        return round(sum(values) / len(values), 1) if values else None
+
+    return {
+        "title": title,
+        "teamId": team_id,
+        "teamName": team_name,
+        "memberCount": member_count,
+        "workoutCount": len(workouts),
+        "averageScore": _average_metric("workoutScore"),
+        "averageConsistencyScore": _average_metric("workoutScore"),
+        "averageArmsScore": _average_metric("armsStraightScore"),
+        "averageBackScore": _average_metric("backStraightScore"),
+        "points": points,
+        "emptyState": empty_state,
+    }
+
+
+def _collect_weekly_workouts(
+    workouts,
+    *,
+    window_start,
+    window_end,
+    display_name,
+    user_id=None,
+    current_user_id=None,
+    include_current_user_flag=False,
+):
+    weekly_workouts = []
+    points = []
+
+    for workout in workouts:
+        completed_at = _get_workout_completed_at(workout)
+        if completed_at is None or completed_at < window_start or completed_at > window_end:
+            continue
+
+        weekly_workouts.append(workout)
+        score = _get_workout_composite_score(workout)
+        if score is None:
+            continue
+
+        point = {
+            "workoutId": workout.get("workoutId"),
+            "completedAt": completed_at.isoformat(),
+            "score": round(score, 2),
+            "consistencyScore": _coerce_score_value(workout.get("workoutScore")),
+            "armsScore": _coerce_score_value(workout.get("armsStraightScore")),
+            "backScore": _coerce_score_value(workout.get("backStraightScore")),
+            "displayName": display_name,
+            "userId": user_id,
+        }
+        if include_current_user_flag:
+            point["isCurrentUser"] = user_id == current_user_id
+        points.append(point)
+
+    points.sort(key=lambda item: item["completedAt"])
+    return weekly_workouts, points
+
+
+def _resolve_recording_user_id(data):
+    requested_user_id = (data.get("userId") or "").strip()
+    session_user_id = (session.get("user_id") or "").strip()
+
+    if session_user_id:
+        if requested_user_id and requested_user_id != session_user_id:
+            logger.warning(
+                "Recording request userId %s did not match session user %s; using session user",
+                requested_user_id,
+                session_user_id,
+            )
+        return session_user_id
+    return requested_user_id
+
+
+def _recording_upload_limit_payload(uploaded_today_sec, requested_duration_sec, upload_date):
+    remaining_today_sec = max(MAX_DAILY_RECORDING_UPLOAD_SEC - uploaded_today_sec, 0)
+    return {
+        "error": "Daily recording upload limit of 2 hours exceeded",
+        "uploadDate": upload_date,
+        "maxDailyUploadDurationSec": MAX_DAILY_RECORDING_UPLOAD_SEC,
+        "uploadedTodaySec": uploaded_today_sec,
+        "requestedDurationSec": requested_duration_sec,
+        "remainingTodaySec": remaining_today_sec,
+    }
+
+
+def _check_daily_recording_upload_limit(
+    recordings_table,
+    user_id,
+    created_at_dt,
+    requested_duration_sec,
+):
+    upload_date = created_at_dt.date().isoformat()
+    uploaded_today_sec = sum_recording_durations_for_utc_date(
+        recordings_table,
+        user_id,
+        upload_date,
+    )
+    if uploaded_today_sec + requested_duration_sec > MAX_DAILY_RECORDING_UPLOAD_SEC:
+        return _recording_upload_limit_payload(
+            uploaded_today_sec,
+            requested_duration_sec,
+            upload_date,
+        )
+    return None
 
 
 def _build_coordinate_series(frames, clip_duration_sec):
@@ -273,6 +471,124 @@ def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
         return normalized_joint_angle(shoulder, elbow, wrist)
     except ValueError:
         return None
+
+
+def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression):
+    if not side_coordinates or not anchor_progression:
+        return None
+
+    shoulder_name = f"{dominant_side}_shoulder"
+    elbow_name = f"{dominant_side}_elbow"
+    wrist_name = f"{dominant_side}_wrist"
+    assembler = PracticeStrokeAssembler()
+
+    by_time = {}
+    for item in side_coordinates:
+        by_time.setdefault(item["time"], {})[item["name"]] = item
+
+    straightness_scores = []
+    for timestamp in sorted(by_time.keys()):
+        frame = by_time[timestamp]
+        shoulder = frame.get(shoulder_name)
+        elbow = frame.get(elbow_name)
+        wrist = frame.get(wrist_name)
+        if not shoulder or not elbow or not wrist:
+            continue
+
+        try:
+            progression = assembler.match_progression_interval(
+                anchor_progression,
+                list(frame.values()),
+            )
+        except ValueError:
+            continue
+
+        if progression.get("progression_step", 1.0) > ARMS_STRAIGHT_PROGRESS_MAX:
+            continue
+
+        angle_value = _compute_elbow_angle_normalized(shoulder, elbow, wrist)
+        if angle_value is None:
+            continue
+
+        bend_degrees = max(0.0, (1.0 - angle_value) * 180.0)
+        if bend_degrees <= ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG:
+            straightness_scores.append(100.0)
+            continue
+
+        if bend_degrees >= ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG:
+            straightness_scores.append(0.0)
+            continue
+
+        remaining = ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG - bend_degrees
+        scoring_window = (
+            ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG
+            - ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG
+        )
+        straightness_scores.append((remaining / scoring_window) * 100.0)
+
+    if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
+        return None
+
+    return round(sum(straightness_scores) / len(straightness_scores), 2)
+
+
+def _score_back_straightness(side_coordinates, dominant_side, anchor_progression):
+    if not side_coordinates or not anchor_progression:
+        return None
+
+    hip_name = f"{dominant_side}_hip"
+    shoulder_name = f"{dominant_side}_shoulder"
+    ear_name = f"{dominant_side}_ear"
+    assembler = PracticeStrokeAssembler()
+
+    by_time = {}
+    for item in side_coordinates:
+        by_time.setdefault(item["time"], {})[item["name"]] = item
+
+    straightness_scores = []
+    for timestamp in sorted(by_time.keys()):
+        frame = by_time[timestamp]
+        hip = frame.get(hip_name)
+        shoulder = frame.get(shoulder_name)
+        head = frame.get(ear_name) or frame.get("nose")
+        if not hip or not shoulder or not head:
+            continue
+
+        try:
+            progression = assembler.match_progression_interval(
+                anchor_progression,
+                list(frame.values()),
+            )
+        except ValueError:
+            continue
+
+        if progression.get("progression_step", 1.0) > BACK_STRAIGHT_PROGRESS_MAX:
+            continue
+
+        angle_value = _compute_elbow_angle_normalized(hip, shoulder, head)
+        if angle_value is None:
+            continue
+
+        back_angle_degrees = angle_value * 180.0
+        if back_angle_degrees >= BACK_STRAIGHT_FULL_CREDIT_DEG:
+            straightness_scores.append(100.0)
+            continue
+
+        if back_angle_degrees <= BACK_STRAIGHT_ZERO_CREDIT_DEG:
+            straightness_scores.append(0.0)
+            continue
+
+        scoring_window = (
+            BACK_STRAIGHT_FULL_CREDIT_DEG
+            - BACK_STRAIGHT_ZERO_CREDIT_DEG
+        )
+        earned = back_angle_degrees - BACK_STRAIGHT_ZERO_CREDIT_DEG
+        straightness_scores.append((earned / scoring_window) * 100.0)
+
+    if len(straightness_scores) < BACK_STRAIGHT_MIN_POINTS:
+        return None
+
+    return round(sum(straightness_scores) / len(straightness_scores), 2)
 
 
 # Motion features are currently derived from upper-body landmark relationships.
@@ -660,9 +976,21 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
 
     mean_distance = (weighted_total / weight_sum) if weight_sum else None
     score = _alignment_score(mean_distance)
+    arms_straight_score = _score_arms_straightness(
+        side_coordinates,
+        dominant_side,
+        anchor_progression,
+    )
+    back_straight_score = _score_back_straightness(
+        side_coordinates,
+        dominant_side,
+        anchor_progression,
+    )
 
     return {
         "anchorLandmark": anchor_name,
+        "armsStraightScore": arms_straight_score,
+        "backStraightScore": back_straight_score,
         "dominantSide": dominant_side,
         "landmarksUsed": sorted(side_landmarks),
         "frameCount": len(frames),
@@ -735,6 +1063,108 @@ def _decode_cursor(cursor: str | None) -> dict | None:
     return payload
 
 
+def _numeric_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        normalized = value.strip().rstrip("%")
+        if not normalized or normalized.lower() in {"n/a", "none", "null"}:
+            return None
+        try:
+            return float(normalized)
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_alignment_details(details: str | None) -> dict[str, str]:
+    if not details:
+        return {}
+
+    parsed = {}
+    for line in details.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        normalized_key = key.strip().lower()
+        if normalized_key:
+            parsed[normalized_key] = value.strip()
+    return parsed
+
+
+def _workout_metric_value(workout: dict, field_name: str, *detail_keys: str):
+    value = _numeric_or_none(workout.get(field_name))
+    if value is not None:
+        return value
+
+    details = _parse_alignment_details(workout.get("alignmentDetails"))
+    for detail_key in detail_keys:
+        value = _numeric_or_none(details.get(detail_key))
+        if value is not None:
+            return value
+    return None
+
+
+def _summarize_team_workouts(workouts_table, memberships: list[dict]) -> dict:
+    user_ids = sorted({item.get("userId") for item in memberships if item.get("userId")})
+    metrics = {
+        "consistencyScore": {
+            "field": "workoutScore",
+            "detail_keys": ("consistency score", "score"),
+            "sum": 0.0,
+            "count": 0,
+        },
+        "armsStraightScore": {
+            "field": "armsStraightScore",
+            "detail_keys": ("arms straight score",),
+            "sum": 0.0,
+            "count": 0,
+        },
+        "backStraightScore": {
+            "field": "backStraightScore",
+            "detail_keys": ("back straight score",),
+            "sum": 0.0,
+            "count": 0,
+        },
+    }
+    workout_count = 0
+
+    for user_id in user_ids:
+        for workout in list_workouts(workouts_table, user_id):
+            workout_count += 1
+            for metric in metrics.values():
+                value = _workout_metric_value(
+                    workout,
+                    metric["field"],
+                    *metric["detail_keys"],
+                )
+                if value is None:
+                    continue
+                metric["sum"] += value
+                metric["count"] += 1
+
+    return {
+        "memberCount": len(user_ids),
+        "workoutCount": workout_count,
+        "metrics": {
+            name: {
+                "average": (
+                    round(metric["sum"] / metric["count"], 2)
+                    if metric["count"]
+                    else None
+                ),
+                "count": metric["count"],
+            }
+            for name, metric in metrics.items()
+        },
+        "unavailableReason": None,
+    }
+
+
 @api_bp.route("/health", methods=["GET"])
 def health_check():
     """Simple health check endpoint - no auth required to test API connectivity."""
@@ -779,9 +1209,9 @@ def add_team_member(team_id):
         return jsonify({"error": "team_id is required"}), 400
 
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
-    if not user_id:
-        return jsonify({"error": "userId is required"}), 400
+    user_identifier = (data.get("userLookup") or data.get("userId") or "").strip()
+    if not user_identifier:
+        return jsonify({"error": "display name or user ID is required"}), 400
 
     member_role = (data.get("memberRole") or "rower").strip()
     member_role = member_role.lower()
@@ -796,11 +1226,17 @@ def add_team_member(team_id):
         return jsonify({"error": str(err)}), 500
 
     try:
-        user_response = users_table.get_item(Key={"userId": user_id})
+        user_item = resolve_user_by_identifier(users_table, user_identifier)
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 409
     except Exception as err:
         return jsonify({"error": "Unable to verify user", "detail": str(err)}), 500
 
-    if not user_response.get("Item"):
+    if not user_item:
+        return jsonify({"error": "User does not exist"}), 404
+
+    user_id = user_item.get("userId")
+    if not user_id:
         return jsonify({"error": "User does not exist"}), 404
 
     try:
@@ -854,9 +1290,11 @@ def current_team():
         cursor = _decode_cursor(request.args.get("cursor"))
     except ValueError as err:
         return jsonify({"error": str(err)}), 400
+    include_stats = request.args.get("includeStats", "true").lower() != "false"
 
     try:
         users_table, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
     except RuntimeError as err:
         logger.error(f"GET /team/current: DynamoDB tables not available: {err}")
         return jsonify({"error": str(err)}), 500
@@ -876,6 +1314,12 @@ def current_team():
     logger.debug(f"GET /team/current: user {user_id} is on team {team_id}")
 
     try:
+        team = get_team(teams_table, team_id)
+    except Exception as err:
+        logger.error(f"GET /team/current: failed to load team metadata: {err}", exc_info=True)
+        return jsonify({"error": "Unable to load team", "detail": str(err)}), 500
+
+    try:
         members, next_key = fetch_team_members_page(
             users_table,
             team_members_table,
@@ -893,11 +1337,158 @@ def current_team():
         logger.error(f"GET /team/current: failed to load team members: {err}", exc_info=True)
         return jsonify({"error": "Unable to load team members", "detail": str(err)}), 500
 
-    return jsonify({
+    payload = {
         "teamId": team_id,
+        "teamName": (team or {}).get("teamName"),
         "members": members,
         "memberRole": membership.get("memberRole"),
         "nextCursor": _encode_cursor(next_key),
+    }
+
+    if not include_stats:
+        return jsonify(payload)
+
+    team_stats = {
+        "memberCount": len(members),
+        "workoutCount": 0,
+        "metrics": {
+            "consistencyScore": {"average": None, "count": 0},
+            "armsStraightScore": {"average": None, "count": 0},
+            "backStraightScore": {"average": None, "count": 0},
+        },
+        "unavailableReason": None,
+    }
+    try:
+        workouts_table = get_workouts_table()
+        memberships = list_team_members_by_team(team_members_table, team_id)
+        team_stats = _summarize_team_workouts(workouts_table, memberships)
+    except Exception as err:
+        logger.warning(
+            "GET /team/current: unable to load team workout stats for %s: %s",
+            team_id,
+            err,
+            exc_info=True,
+        )
+        team_stats["unavailableReason"] = "Unable to load team workout stats"
+
+    payload["teamStats"] = team_stats
+    return jsonify(payload)
+
+
+@api_bp.route("/team/stats/weekly", methods=["GET"])
+def weekly_team_stats():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    window_end = _now_utc()
+    window_start = window_end - timedelta(days=7)
+
+    try:
+        users_table, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        profile = fetch_user_profile(user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load account profile", "detail": str(err)}), 500
+
+    display_name = (
+        profile.get("name")
+        or session.get("user_name")
+        or session.get("user_email")
+        or user_id
+        or "Current user"
+    )
+
+    try:
+        membership = get_team_membership(team_members_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load team membership", "detail": str(err)}), 500
+
+    try:
+        user_workouts = list_workouts(workouts_table, user_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load workouts", "detail": str(err)}), 500
+
+    weekly_user_workouts, user_points = _collect_weekly_workouts(
+        user_workouts,
+        window_start=window_start,
+        window_end=window_end,
+        display_name=display_name,
+        user_id=user_id,
+        current_user_id=user_id,
+    )
+    user_summary = _build_weekly_summary(display_name, weekly_user_workouts, user_points)
+
+    team_summary = _build_weekly_summary(
+        "No team yet",
+        [],
+        [],
+        empty_state="Join or create a team to see team-wide weekly scores.",
+    )
+
+    if membership:
+        team_id = membership.get("teamId")
+        try:
+            team = get_team(teams_table, team_id)
+            members = fetch_team_members(
+                users_table,
+                team_members_table,
+                team_id,
+                ALLOWED_TEAM_ROLES,
+            )
+        except Exception as err:
+            return jsonify({"error": "Unable to load team details", "detail": str(err)}), 500
+
+        team_name = (team or {}).get("teamName") or "Current team"
+        team_points = []
+        team_workouts = []
+        for member in members:
+            member_user_id = member.get("userId")
+            if not member_user_id:
+                continue
+
+            member_display_name = member.get("name") or member_user_id
+            try:
+                member_workouts = list_workouts(workouts_table, member_user_id)
+            except Exception as err:
+                return jsonify({
+                    "error": "Unable to load team workouts",
+                    "detail": str(err),
+                }), 500
+
+            weekly_member_workouts, member_points = _collect_weekly_workouts(
+                member_workouts,
+                window_start=window_start,
+                window_end=window_end,
+                display_name=member_display_name,
+                user_id=member_user_id,
+                current_user_id=user_id,
+                include_current_user_flag=True,
+            )
+            team_workouts.extend(weekly_member_workouts)
+            team_points.extend(member_points)
+
+        team_points.sort(key=lambda item: item["completedAt"])
+        team_summary = _build_weekly_summary(
+            team_name,
+            team_workouts,
+            team_points,
+            team_id=team_id,
+            team_name=team_name,
+            member_count=len(members),
+            empty_state="No team workouts with scores were recorded in this window.",
+        )
+
+    return jsonify({
+        "windowStart": window_start.isoformat(),
+        "windowEnd": window_end.isoformat(),
+        "user": user_summary,
+        "team": team_summary,
     })
 
 
@@ -908,9 +1499,9 @@ def join_team():
         return jsonify({"error": "authentication required"}), 401
 
     data = request.get_json(silent=True) or {}
-    team_id = (data.get("teamId") or "").strip()
-    if not team_id:
-        return jsonify({"error": "teamId is required"}), 400
+    team_name = (data.get("teamName") or "").strip()
+    if not team_name:
+        return jsonify({"error": "teamName is required"}), 400
 
     member_role = (data.get("memberRole") or "rower").strip().lower()
     if member_role not in ALLOWED_TEAM_ROLES:
@@ -924,9 +1515,10 @@ def join_team():
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
-    team_item = get_team(teams_table, team_id)
+    team_item = get_team_by_name(teams_table, team_name)
     if not team_item:
         return jsonify({"error": "Team not found"}), 404
+    team_id = team_item.get("teamId")
 
     try:
         existing = get_team_membership(team_members_table, user_id)
@@ -1076,6 +1668,7 @@ def leave_team():
 
     try:
         _, team_members_table = get_ddb_tables()
+        teams_table = get_teams_table()
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
@@ -1089,11 +1682,26 @@ def leave_team():
 
     team_id = membership.get("teamId")
     try:
+        team_members = list_team_members_by_team(team_members_table, team_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to inspect team members", "detail": str(err)}), 500
+
+    deleted_team = len(team_members) <= 1
+    try:
         team_members_table.delete_item(Key={"teamId": team_id, "userId": user_id})
     except Exception as err:
         return jsonify({"error": "Unable to leave team", "detail": str(err)}), 500
 
-    return jsonify({"status": "ok", "teamId": team_id})
+    if deleted_team:
+        try:
+            teams_table.delete_item(Key={"teamId": team_id})
+        except Exception as err:
+            return jsonify({
+                "error": "Left team but failed to delete empty team",
+                "detail": str(err),
+            }), 500
+
+    return jsonify({"status": "ok", "teamId": team_id, "deletedTeam": deleted_team})
 
 
 @api_bp.route("/account/name", methods=["POST"])
@@ -1112,9 +1720,19 @@ def update_account_name():
     except RuntimeError as err:
         return jsonify({"error": str(err)}), 500
 
-    update_expr = "SET #name = :name, updatedAt = :updatedAt"
+    try:
+        if display_name_exists(users_table, name, excluding_user_id=user_id):
+            return jsonify({"error": "Display name already in use"}), 409
+    except Exception as err:
+        return jsonify({"error": "Unable to check display name", "detail": str(err)}), 500
+
+    update_expr = "SET #name = :name, nameKey = :nameKey, updatedAt = :updatedAt"
     expr_attr_names = {"#name": "name"}
-    expr_attr_values = {":name": name, ":updatedAt": now_iso()}
+    expr_attr_values = {
+        ":name": name,
+        ":nameKey": normalize_display_name(name),
+        ":updatedAt": now_iso(),
+    }
 
     user_email = session.get("user_email")
     if user_email:
@@ -1132,6 +1750,7 @@ def update_account_name():
         return jsonify({"error": "Unable to update name", "detail": str(err)}), 500
 
     session["user_name"] = name
+    session["display_name_required"] = False
     return jsonify({"status": "ok", "name": name})
 
 
@@ -1225,11 +1844,41 @@ def delete_account():
 @api_bp.route("/recordings/presign", methods=["POST"])
 def presign_recording_upload():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     content_type = (data.get("contentType") or "video/webm").strip()
+    duration_sec = data.get("durationSec")
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id:
         return jsonify({"error": "userId is required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_sec is not None and duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
+
+    if duration_value is not None:
+        try:
+            recordings_table = get_recordings_table()
+        except RuntimeError:
+            recordings_table = None
+
+        if recordings_table is not None:
+            try:
+                limit_payload = _check_daily_recording_upload_limit(
+                    recordings_table,
+                    user_id,
+                    created_at_dt,
+                    duration_value,
+                )
+            except Exception as err:
+                return jsonify({
+                    "error": "Unable to verify daily recording upload limit",
+                    "detail": str(err),
+                }), 500
+
+            if limit_payload is not None:
+                limit_payload["createdAt"] = normalized_created_at
+                return jsonify(limit_payload), 400
 
     try:
         s3 = get_s3_client()
@@ -1265,19 +1914,41 @@ def presign_recording_upload():
 @api_bp.route("/recordings", methods=["POST"])
 def save_recording_metadata():
     data = request.get_json(silent=True) or {}
-    user_id = (data.get("userId") or "").strip()
+    workout_id = (data.get("workoutId") or "").strip()
+    user_id = _resolve_recording_user_id(data)
     object_key = (data.get("objectKey") or "").strip()
     content_type = (data.get("contentType") or "video/webm").strip()
     duration_sec = data.get("durationSec")
-    created_at = data.get("createdAt") or now_iso()
+    normalized_created_at, created_at_dt = _normalize_event_timestamp(data.get("createdAt"))
 
     if not user_id or not object_key:
         return jsonify({"error": "userId and objectKey are required"}), 400
+
+    duration_value = _coerce_positive_duration_seconds(duration_sec)
+    if duration_value is None:
+        return jsonify({"error": "durationSec must be a positive number"}), 400
 
     try:
         recordings_table = get_recordings_table()
     except RuntimeError as err:
         return jsonify({"status": "skipped", "reason": str(err)}), 200
+
+    try:
+        limit_payload = _check_daily_recording_upload_limit(
+            recordings_table,
+            user_id,
+            created_at_dt,
+            duration_value,
+        )
+    except Exception as err:
+        return jsonify({
+            "error": "Unable to verify daily recording upload limit",
+            "detail": str(err),
+        }), 500
+
+    if limit_payload is not None:
+        limit_payload["createdAt"] = normalized_created_at
+        return jsonify(limit_payload), 400
 
     recording_id = uuid4().hex
     item = {
@@ -1285,8 +1956,9 @@ def save_recording_metadata():
         "recordingId": recording_id,
         "objectKey": object_key,
         "contentType": content_type,
-        "durationSec": duration_sec,
-        "createdAt": created_at,
+        "workoutId": workout_id,
+        "durationSec": duration_value,
+        "createdAt": normalized_created_at,
     }
 
     try:
@@ -1304,6 +1976,7 @@ def list_recordings_for_user(user_id):
     if not user_id:
         logger.warning("GET /recordings: user_id is required")
         return jsonify({"error": "user_id is required"}), 400
+    workout_id = request.args.get("workoutId")
 
     try:
         limit = _parse_limit(request.args.get("limit"), RECORDINGS_PAGE_SIZE)
@@ -1321,9 +1994,10 @@ def list_recordings_for_user(user_id):
         logger.debug(f"GET /recordings: querying recordings for user {user_id}")
         items, next_key = list_recordings_page(
             recordings_table,
-            user_id,
+            user_id=user_id,
             limit=limit,
             exclusive_start_key=cursor,
+            workout_id=workout_id,
         )
         logger.info("GET /recordings: found %d recordings for user %s", len(items), user_id)
     except Exception as err:
@@ -1382,10 +2056,13 @@ def save_workout():
     stroke_count = data.get("strokeCount")
     cadence_spm = data.get("cadenceSpm")
     range_of_motion = data.get("rangeOfMotion")
+    arms_straight_score = data.get("armsStraightScore")
+    back_straight_score = data.get("backStraightScore")
     dominant_side = (data.get("dominantSide") or "").strip()
     started_at = data.get("startedAt")
     completed_at = data.get("completedAt") or now_iso()
     created_at = data.get("createdAt") or completed_at
+    workout_id = data.get("workoutId")
 
     try:
         duration_value = float(duration_sec)
@@ -1407,7 +2084,6 @@ def save_workout():
         logger.warning("POST /workouts: workouts table not configured: %s", err)
         return jsonify({"status": "skipped", "reason": str(err)}), 200
 
-    workout_id = uuid4().hex
     item = {
         "userId": user_id,
         "workoutId": workout_id,
@@ -1449,6 +2125,18 @@ def save_workout():
             item["rangeOfMotion"] = Decimal(str(range_of_motion))
         except (InvalidOperation, TypeError, ValueError):
             return jsonify({"error": "rangeOfMotion must be numeric"}), 400
+
+    if arms_straight_score is not None:
+        try:
+            item["armsStraightScore"] = Decimal(str(arms_straight_score))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "armsStraightScore must be numeric"}), 400
+
+    if back_straight_score is not None:
+        try:
+            item["backStraightScore"] = Decimal(str(back_straight_score))
+        except (InvalidOperation, TypeError, ValueError):
+            return jsonify({"error": "backStraightScore must be numeric"}), 400
 
     if dominant_side:
         item["dominantSide"] = dominant_side
@@ -1497,6 +2185,31 @@ def list_workouts_for_current_user():
         "userId": user_id,
         "workouts": items,
         "nextCursor": _encode_cursor(next_key),
+    })
+
+
+@api_bp.route("/workouts/<workout_id>", methods=["GET"])
+def get_workout_for_current_user(workout_id):
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    try:
+        workouts_table = get_workouts_table()
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    try:
+        workout = get_workout_for_user(workouts_table, user_id, workout_id)
+    except Exception as err:
+        return jsonify({"error": "Unable to load workout", "detail": str(err)}), 500
+
+    if not workout:
+        return jsonify({"error": "Workout not found"}), 404
+
+    return jsonify({
+        "userId": user_id,
+        "workout": workout,
     })
 
 

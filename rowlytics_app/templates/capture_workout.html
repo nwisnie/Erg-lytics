@@ -7,6 +7,7 @@
 {% block body_attrs %}
 data-user-id="{{ user_id }}"
 data-api-base="{{ request.url_root.rstrip('/') }}"
+data-workout-detail-base="{{ url_for('public.workout_summary_detail', workout_id='__WORKOUT_ID__') }}"
 {% endblock %}
 
 {% block header %}
@@ -28,12 +29,6 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
             alt="Rowing posture guide"
           />
           <p class="capture__placeholder-text">Keep one body side (shoulder to ankle) in frame</p>
-          <p class="capture__note">
-            Lighting, camera angle, loose clothing, or partial body visibility may reduce feedback's accuracy.
-          </p>
-          <p class="capture__note">
-            Feedback is meant to support coaching and practice, and may not fit every body type or rowing style equally well.
-          </p>
         </div>
         <video
           id="liveCamera"
@@ -57,7 +52,7 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
       </button>
     </div>
     <p id="captureSessionNotice" class="capture__note" aria-live="polite">
-      Workouts automatically stop after 1 hour.
+      Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day.
     </p>
   </div>
 </main>

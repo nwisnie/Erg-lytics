@@ -7,6 +7,7 @@
 {% block body_attrs %}
 data-user-id="{{ user_id }}"
 data-api-base="{{ request.url_root.rstrip('/') }}"
+data-workout-detail-base="{{ url_for('public.workout_summary_detail', workout_id='__WORKOUT_ID__') }}"
 {% endblock %}
 
 {% block header %}
@@ -25,7 +26,7 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
       </div>
       <div class="recordings-panel__header">
         <h2>Past Workouts</h2>
-        <p>Each entry includes duration, timestamp, summary, and consistency score when available.</p>
+        <p>Each entry includes duration, timestamp, summary, and workout scores when available.</p>
       </div>
       <div id="workoutsGrid" class="recordings-grid"></div>
       <button

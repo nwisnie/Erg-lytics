@@ -9,10 +9,15 @@ Parameters:
     ConstraintDescription: "Must be 1-63 chars of lowercase letters, numbers, or hyphens."
     Description: Globally unique prefix for the Cognito hosted UI domain.
 
+  CognitoHostedUiDomain:
+    Type: String
+    Default: auth.erglytics.com
+    Description: Domain used for Cognito Hosted UI login, signup, and token endpoints.
+
   AppBaseUrl:
     Type: String
-    Default: https://xft207g10i.execute-api.us-east-2.amazonaws.com/Prod
-    Description: Base URL used for Cognito callback and logout redirects.
+    Default: https://dev.erglytics.com
+    Description: Public URL for this stack used for Cognito callback urls.
 
   SesFromEmail:
     Type: String
@@ -96,6 +101,8 @@ Resources:
           AttributeType: S
         - AttributeName: email
           AttributeType: S
+        - AttributeName: nameKey
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
@@ -103,6 +110,12 @@ Resources:
         - IndexName: EmailIndex
           KeySchema:
             - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: NameKeyIndex
+          KeySchema:
+            - AttributeName: nameKey
               KeyType: HASH
           Projection:
             ProjectionType: ALL
@@ -168,10 +181,14 @@ Resources:
           AttributeType: S
         - AttributeName: createdAt
           AttributeType: S
+        - AttributeName: workoutId
+          AttributeType: S
       KeySchema:
         - AttributeName: userId
           KeyType: HASH
         - AttributeName: recordingId
+          KeyType: RANGE
+        - AttributeName: workoutId
           KeyType: RANGE
       GlobalSecondaryIndexes:
         - IndexName: UserCreatedAtIndex
@@ -315,13 +332,14 @@ Resources:
           ROWLYTICS_RECORDINGS_PAGE_SIZE: "8"
           ROWLYTICS_WORKOUTS_PAGE_SIZE: "8"
           ROWLYTICS_UPLOAD_BUCKET: !Ref UploadBucketName
-          ROWLYTICS_COGNITO_DOMAIN: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+          ROWLYTICS_COGNITO_DOMAIN: !Ref CognitoHostedUiDomain
           ROWLYTICS_COGNITO_CLIENT_ID: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
           ROWLYTICS_COGNITO_REDIRECT_URI: !Sub "${AppBaseUrl}/auth/callback"
           ROWLYTICS_COGNITO_LOGOUT_REDIRECT_URI: !Sub "${AppBaseUrl}/signin"
           ROWLYTICS_COGNITO_USER_POOL_ID: !If [CreateManagedResources, !Ref UserPool, !Ref ExistingUserPoolId]
           SES_FROM_EMAIL: !Ref SesFromEmail
           SES_TEST_TO: !Ref SesTestTo
+          WEEKLY_SUMMARY_TEST_TEAM_ID: 0a134c096ca740738051ee0a46a34370
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
@@ -458,6 +476,12 @@ Resources:
             RestApiId: !Ref RowlyticsApi
             Path: /{proxy+}
             Method: ANY
+        WeeklyCoachSummarySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(7 days)
+            Enabled: true
+            Input: '{ "scheduled_task": "weekly_coach_summary" }'
 
 Outputs:
   UsersTableName:
@@ -477,6 +501,9 @@ Outputs:
   UserPoolClientId:
     Value: !If [CreateManagedResources, !Ref UserPoolClient, !Ref ExistingUserPoolClientId]
   UserPoolDomain:
-    Value: !Sub "${CognitoDomainPrefix}.auth.${AWS::Region}.amazoncognito.com"
+    Value: !Ref CognitoHostedUiDomain
+  ErglyticsAppUrl:
+    Description: Public application URL
+    Value: !Ref AppBaseUrl
   RowlyticsApiUrl:
     Value: !Sub "https://${RowlyticsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

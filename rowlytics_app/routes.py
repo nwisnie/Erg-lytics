@@ -12,6 +12,7 @@ from flask import (
     Blueprint,
     abort,
     current_app,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -29,6 +30,7 @@ from rowlytics_app.auth.sessions import user_context
 from rowlytics_app.services.dynamodb import fetch_user_profile, sync_user_profile
 from rowlytics_app.services.metrics import publish_login_latency
 from rowlytics_app.services.mock_email import send_mock_auto_email
+from rowlytics_app.services.weekly_coach_summary import run_weekly_coach_summaries
 
 public_bp = Blueprint("public", __name__)
 APP_VERSION = "0.0.1"
@@ -85,24 +87,24 @@ TEMPLATE_CARDS: tuple[TemplateCard, ...] = (
         template_name="team_view.html",
     ),
     TemplateCard(
-        slug="manage-team",
-        title="Manage Team",
-        blurb="Currently a placeholder.",
-        image_path=(
-            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
-            "images/team_settings_cool.png"
-            ),
-        template_name="manage_team.html",
-    ),
-    TemplateCard(
         slug="team-stats",
         title="Team Stats",
-        blurb="Currently a placeholder.",
+        blurb="Compare your weekly scores with your team's progress.",
         image_path=(
             "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
             "images/stats_cool.png"
             ),
         template_name="team_stats.html",
+    ),
+    TemplateCard(
+        slug="manage-team",
+        title="Account Settings",
+        blurb="Update your name and manage your account.",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/team_settings_cool.png"
+            ),
+        template_name="manage_team.html",
     ),
 )
 
@@ -151,15 +153,31 @@ def landing_page() -> str:
 
 @public_bp.route("/templates/<slug>")
 def template_detail(slug: str) -> str:
+    if slug == "manage-team":
+        return redirect(url_for("public.settings"))
     card = _get_card(slug)
     if card is None:
         abort(404)
     return render_template(card.template_name, card=card, **user_context())
 
 
+@public_bp.route("/workout-summaries/<workout_id>")
+def workout_summary_detail(workout_id: str) -> str:
+    return render_template(
+        "workout_summary_detail.html",
+        workout_id=workout_id,
+        **user_context(),
+    )
+
+
 @public_bp.route("/profile")
 def profile() -> str:
     return render_template("profile.html", **user_context())
+
+
+@public_bp.route("/help")
+def help_page() -> str:
+    return render_template("help.html", **user_context())
 
 
 @public_bp.route("/settings")
@@ -171,9 +189,18 @@ def settings() -> str:
     )
 
 
+@public_bp.route("/display-name")
+def display_name_setup() -> str:
+    if not session.get("display_name_required"):
+        return redirect(url_for("public.landing_page"))
+    return render_template("display_name_setup.html", **user_context())
+
+
 @public_bp.route("/signin")
 def signin() -> str:
     if session.get("user_id"):
+        if session.get("display_name_required"):
+            return redirect(url_for("public.display_name_setup"))
         return redirect(url_for("public.landing_page"))
     login_url = build_cognito_login_url()
     signup_url = build_cognito_signup_url()
@@ -236,12 +263,14 @@ def auth_callback() -> str:
     if stored_name:
         session["user_name"] = stored_name
 
-    if _looks_generated_display_name(
+    needs_display_name = _looks_generated_display_name(
         stored_name,
         user_id=session.get("user_id"),
         username=raw_username,
-    ):
-        return redirect(url_for("public.settings", require_display_name="1"))
+    )
+    session["display_name_required"] = needs_display_name
+    if needs_display_name:
+        return redirect(url_for("public.display_name_setup"))
 
     return redirect(url_for("public.landing_page"))
 
@@ -281,3 +310,17 @@ def test_email():
         return f"Test email sent to {test_to}"
     except Exception as exc:
         return f"Failed to send email: {exc}"
+
+
+@public_bp.route("/test-weekly-coach-summaries")
+def test_weekly_coach_summaries():
+    try:
+        results = run_weekly_coach_summaries()
+        return jsonify(results), 200
+    except Exception as exc:
+        return jsonify(
+            {
+                "status": "failed",
+                "error": str(exc),
+            }
+        ), 500

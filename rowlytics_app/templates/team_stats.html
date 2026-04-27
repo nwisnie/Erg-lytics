@@ -2,16 +2,94 @@
 
 {% block title %}Team Stats{% endblock %}
 
+{% block header %}
+  {% include "partials/masthead.html" %}
+{% endblock %}
+
 {% block content %}
-{% include "partials/masthead.html" %}
+<main class="page page-pad">
+  <section class="team-stats container stack">
+    <div class="team-stats__header">
+      <h1>Team Statistics</h1>
+      <p id="teamStatsRange" class="team-stats__range">Loading the last 7 days of workout scores...</p>
+    </div>
 
-<main class="page page-pad container stack">
-  <h1>Team Statistics</h1>
+    <p id="teamStatsMessage" class="team-stats__message" aria-live="polite"></p>
 
-  <p>
-    Team statistics will appear here once team functionality is implemented.
-  </p>
+    <section class="team-stats__summaries" aria-label="Weekly summaries">
+      <article class="team-stats-card">
+        <div class="team-stats-card__eyebrow">Your Week</div>
+        <h2 id="userStatsTitle" class="team-stats-card__title">Loading...</h2>
+        <div class="team-stats-card__metrics">
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Workouts</span>
+            <span id="userWorkoutCount" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Consistency</span>
+            <span id="userConsistencyScore" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Arms</span>
+            <span id="userArmsScore" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Back</span>
+            <span id="userBackScore" class="team-stats-card__value">--</span>
+          </div>
+        </div>
+      </article>
 
-  <p>This page is currently a placeholder.</p>
+      <article class="team-stats-card team-stats-card--team">
+        <div class="team-stats-card__eyebrow">Team Week</div>
+        <h2 id="teamStatsTitle" class="team-stats-card__title">Loading...</h2>
+        <div class="team-stats-card__metrics">
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Workouts</span>
+            <span id="teamWorkoutCount" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Consistency</span>
+            <span id="teamConsistencyScore" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Arms</span>
+            <span id="teamArmsScore" class="team-stats-card__value">--</span>
+          </div>
+          <div class="team-stats-card__metric">
+            <span class="team-stats-card__label">Back</span>
+            <span id="teamBackScore" class="team-stats-card__value">--</span>
+          </div>
+        </div>
+        <p id="teamMemberCount" class="team-stats-card__meta"></p>
+      </article>
+    </section>
+
+    <section class="team-stats__charts" aria-label="Weekly scatter plots">
+      <article class="team-chart-card">
+        <div class="team-chart-card__header">
+          <div>
+            <h2>Your Composite Scores</h2>
+            <p id="userChartHint" class="team-chart-card__hint">Each point is one workout's combined score, which is the average of its consistency, arms, and back scores.</p>
+          </div>
+        </div>
+        <div id="userScatterChart" class="team-chart-card__plot" aria-live="polite"></div>
+      </article>
+
+      <article class="team-chart-card">
+        <div class="team-chart-card__header">
+          <div>
+            <h2>Team Composite Scores</h2>
+            <p id="teamChartHint" class="team-chart-card__hint">Each point is one team workout's combined score, which is the average of its consistency, arms, and back scores.</p>
+          </div>
+        </div>
+        <div id="teamScatterChart" class="team-chart-card__plot" aria-live="polite"></div>
+      </article>
+    </section>
+  </section>
 </main>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/team_stats.js') }}" defer></script>
 {% endblock %}
