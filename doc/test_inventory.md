@@ -1,6 +1,6 @@
 # Rowlytics Test Inventory
 
-Last updated: 2026-04-25
+Last updated: 2026-04-27
 
 This document inventories the tests currently present in the repository. Automated tests live under `tests/` and `playwright/tests/`. Manual test artifacts live under `tests/test_documentation/`.
 
@@ -14,19 +14,19 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_auth.py` | `pytest` | 20 | Cognito token parsing, login URL generation, token exchange, token expiry, user deletion, and session helpers |
 | `tests/test_deviation.py` | `pytest` | 26 | Skeletal deviation math helpers, limb/torso deviation scoring, midpoint handling, and full pose comparison |
 | `tests/test_display_name_flow.py` | `pytest` | 6 | Display-name onboarding, auth callback redirects, gated navigation, and account-name updates |
-| `tests/test_dynamodb.py` | `pytest` | 50 | DynamoDB resource/table access, profile sync, memberships, recordings, name uniqueness, and identifier resolution |
+| `tests/test_dynamodb.py` | `pytest` | 52 | DynamoDB resource/table access, profile sync, memberships, recordings/workouts date queries, name uniqueness, and identifier resolution |
 | `tests/test_email_integration.py` | `pytest` | 1 | End-to-end `/test-email` route integration with the mock email pipeline |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior for missing config, success, and failure paths |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and API Gateway stage-prefix header injection |
 | `tests/test_mock_email.py` | `pytest` | 4 | Mock email composition, default-name fallback, content generation, and send-error propagation |
-| `tests/test_recordings_api.py` | `pytest` | 3 | Recording upload guardrails, daily duration limits, and metadata normalization |
+| `tests/test_recordings_api.py` | `pytest` | 5 | Recording upload guardrails, daily duration limits, metadata normalization, and date-range filtering |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
-| `tests/test_workout_api.py` | `pytest` | 8 | Workout validation, score persistence, team summary aggregation, and posture scoring helpers |
+| `tests/test_workout_api.py` | `pytest` | 11 | Workout validation, score persistence, date-range filtering, team summary aggregation, and posture scoring helpers |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 163 tests
+Current automated inventory total: 173 tests
 
-- Pytest total: 161 tests
+- Pytest total: 171 tests
 - Playwright total: 2 tests
 
 ## Pytest Inventory
@@ -102,7 +102,7 @@ This suite covers the display-name onboarding flow:
 - duplicate display-name rejection for `/api/account/name`
 - successful account-name updates clearing the onboarding flag and updating session state
 
-### `tests/test_dynamodb.py` (50 tests)
+### `tests/test_dynamodb.py` (52 tests)
 
 This suite covers DynamoDB-related helpers in `rowlytics_app.services.dynamodb`:
 
@@ -114,6 +114,7 @@ This suite covers DynamoDB-related helpers in `rowlytics_app.services.dynamodb`:
 - team lookup helpers
 - paginated query and scan helpers
 - owned-team and recording-list queries
+- paginated recording and workout date-range queries
 - recording-duration aggregation for a UTC day, including index fallback handling
 - team-name uniqueness checks
 - display-name uniqueness checks, including normalization and same-user exceptions
@@ -153,13 +154,15 @@ This suite covers mock email generation in `rowlytics_app.services.mock_email`:
 - presence of expected personal/team statistics and app URL content
 - propagation of email send errors
 
-### `tests/test_recordings_api.py` (3 tests)
+### `tests/test_recordings_api.py` (5 tests)
 
 This suite covers recording upload API guardrails:
 
 - presign rejection when the daily two-hour recording limit would be exceeded
 - metadata-save rejection when the daily limit would be exceeded
 - metadata persistence using the authenticated session user and normalized timestamps
+- created-at range query forwarding for recording list filtering
+- rejection of incomplete created-at range query parameters
 
 ### `tests/test_s3.py` (3 tests)
 
@@ -169,7 +172,15 @@ This suite covers S3 client setup:
 - bucket configuration requirement
 - successful boto3 client creation
 
-### `tests/test_workout_api.py` (8 tests)
+### `tests/test_team_stats_api.py` (3 tests)
+
+This suite covers team statistics API behavior:
+
+- weekly team statistics aggregation across team members
+- empty team-stat responses when the current user is not on a team
+- weekly score point filtering and ordering for team chart data
+
+### `tests/test_workout_api.py` (11 tests)
 
 This suite covers workout API validation and scoring helpers:
 
@@ -177,6 +188,8 @@ This suite covers workout API validation and scoring helpers:
 - accepting and persisting a one-hour workout
 - persisting `armsStraightScore`
 - persisting `backStraightScore`
+- completed-at range query forwarding for workout summary filtering
+- rejection of incomplete completed-at range query parameters
 - team workout summary aggregation across available scores
 - arms-straightness scoring that ignores finish-phase frames
 - high arms-straightness scoring for small bends
