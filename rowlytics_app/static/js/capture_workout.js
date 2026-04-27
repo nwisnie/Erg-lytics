@@ -100,6 +100,93 @@ let latestWorkoutAnalysis = null;
 let latestWorkoutAnalysisText = "";
 let latestWorkoutScore = null;
 
+let bodyInFramePromptPlayed = false;
+let readyToBeginPromptPlayed = false;
+let noAthletePromptPlayed = false;
+
+let badArmsStartMs = null;
+let badBackStartMs = null;
+let lastArmsPromptAtMs = 0;
+let lastBackPromptAtMs = 0;
+let lastNoAthletePromptAtMs = 0;
+
+const noAthleteDelayMs = 5000;
+const noAthleteRepeatMs = 20000;
+const formBadDurationMs = 8000;
+const formPromptCooldownMs = 5000;
+const armsStraightThreshold = 75;
+const backStraightThreshold = 75;
+
+const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
+
+const audioClips = {
+  straightenArms: new Audio(`${STATIC_ASSET_BASE}/audio/straighten_your_arms.mp3`),
+  straightenBack: new Audio(`${STATIC_ASSET_BASE}/audio/straighten_your_back.mp3`),
+  noAthleteDetected: new Audio(`${STATIC_ASSET_BASE}/audio/no_athlete_detected.mp3`),
+  readyToBegin: new Audio(`${STATIC_ASSET_BASE}/audio/ready_to_begin.mp3`),
+  bodyInFrame: new Audio(`${STATIC_ASSET_BASE}/audio/body_in_frame.mp3`),
+  recordingSaved: new Audio(`${STATIC_ASSET_BASE}/audio/recording_saved.mp3`)
+};
+
+Object.values(audioClips).forEach((clip) => {
+  clip.preload = "auto";
+});
+
+const audioQueue = [];
+let audioPlaying = false;
+
+function playAudio(key, { queued = true } = {}) {
+  const clip = audioClips[key];
+  if (!clip) return;
+
+  if (!queued) {
+    audioQueue.length = 0;
+    audioPlaying = false;
+
+    Object.values(audioClips).forEach((audio) => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+
+    clip.play().catch((err) => {
+      console.warn(`Could not play audio "${key}":`, err);
+    });
+    return;
+  }
+
+  audioQueue.push(key);
+  playNextAudio();
+}
+
+function playNextAudio() {
+  if (audioPlaying || !audioQueue.length) return;
+
+  const key = audioQueue.shift();
+  const clip = audioClips[key];
+  if (!clip) {
+    playNextAudio();
+    return;
+  }
+
+  audioPlaying = true;
+  clip.currentTime = 0;
+
+  const finish = () => {
+    clip.removeEventListener("ended", finish);
+    clip.removeEventListener("error", finish);
+    audioPlaying = false;
+    playNextAudio();
+  };
+
+  clip.addEventListener("ended", finish);
+  clip.addEventListener("error", finish);
+
+  clip.play().catch((err) => {
+    console.warn(`Could not play audio "${key}":`, err);
+    finish();
+  });
+}
+
 const SIDE_PROFILE_LEFT = [11, 13, 15, 23, 25, 27];
 const SIDE_PROFILE_RIGHT = [12, 14, 16, 24, 26, 28];
 const sideProfileVisibilityThreshold = 0.35;
@@ -664,6 +751,51 @@ function rememberWorkoutAnalysis(payload) {
   latestWorkoutScore = payload && payload.score != null ? payload.score : null;
 }
 
+function handleFormAudio(frameTime, analysisPayload) {
+  if (!analysisPayload) {
+    badArmsStartMs = null;
+    badBackStartMs = null;
+    return;
+  }
+
+  const armsScore = analysisPayload.armsStraightScore;
+  const backScore = analysisPayload.backStraightScore;
+
+  // console.log("live form scores", { armsScore, backScore });
+
+  if (armsScore != null && armsScore < armsStraightThreshold) {
+    if (badArmsStartMs === null) {
+      badArmsStartMs = frameTime;
+    } else if (
+      frameTime - badArmsStartMs >= formBadDurationMs &&
+      frameTime - lastArmsPromptAtMs >= formPromptCooldownMs
+    ) {
+      console.log("Triggering straightenArms", { armsScore });
+      playAudio("straightenArms");
+      lastArmsPromptAtMs = frameTime;
+      badArmsStartMs = frameTime;
+    }
+  } else {
+    badArmsStartMs = null;
+  }
+
+  if (backScore != null && backScore < backStraightThreshold) {
+    if (badBackStartMs === null) {
+      badBackStartMs = frameTime;
+    } else if (
+      frameTime - badBackStartMs >= formBadDurationMs &&
+      frameTime - lastBackPromptAtMs >= formPromptCooldownMs
+    ) {
+      console.log("Triggering straightenBack", { backScore });
+      playAudio("straightenBack");
+      lastBackPromptAtMs = frameTime;
+      badBackStartMs = frameTime;
+    }
+  } else {
+    badBackStartMs = null;
+  }
+}
+
 async function analyzeLandmarkFrames(frames, createdAt, clipDurationSec, clipCount) {
   if (!apiBase || !Array.isArray(frames) || frames.length < 2) {
     throw new Error("Not enough landmark frames to analyze.");
@@ -1001,25 +1133,12 @@ async function saveRecordingMetadata(metadata) {
   }
 }
 
-async function previewAlignment(landmarkFrames, durationSec) {
-  const response = await fetch(`${apiBase}/api/workouts/alignment-preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      frames: landmarkFrames,
-      clipDurationSec: durationSec,
-      clipCount: frames.length
-    }),
-  });
-  return await response.json();
-}
-
-async function uploadRecording(blob, createdAt, frames) {
+async function uploadRecording(blob, createdAt, analysisPayload) {
   const contentType = blob.type || "video/webm";
   const durationSec = recordingDurationMs / 1000;
-  const result = await previewAlignment(frames, durationSec);
-  if(result.score == null || result.score > recordingScoreThreshold) {
-    return;
+  
+  if (analysisPayload?.score == null || analysisPayload.score > recordingScoreThreshold) {
+    return false;
   }
 
   const presign = await requestUploadUrl(contentType, durationSec, createdAt);
@@ -1045,6 +1164,8 @@ async function uploadRecording(blob, createdAt, frames) {
     workoutId
 
   });
+
+  return true;
 }
 
 async function recordClip() {
@@ -1098,11 +1219,10 @@ async function recordClip() {
       return;
     }
 
-    movementWindowClipCount += 1;
-    const movementWindowSec = getMovementWindowSec();
+    const clipDurationSec = recordingDurationMs / 1000;
     const localMovement = evaluateMovementGate(
-      workoutMovementFrames,
-      movementWindowSec
+      recordedLandmarkFrames,
+      clipDurationSec
     );
     localMovement.clipCount = movementWindowClipCount;
     logMovementDebug("recording_stopped_gate_eval", localMovement, {
@@ -1118,10 +1238,10 @@ async function recordClip() {
     let analysisPayload = null;
     try {
       analysisPayload = await analyzeLandmarkFrames(
-        workoutMovementFrames,
+        recordedLandmarkFrames,
         createdAt,
-        movementWindowSec,
-        movementWindowClipCount
+        clipDurationSec,
+        movementWindowClipCount + 1
       );
       debugCapture("server_analysis_ok", {
         clipIndex: movementWindowClipCount,
@@ -1156,13 +1276,23 @@ async function recordClip() {
     }
 
     try {
-      await uploadRecording(blob, createdAt, workoutMovementFrames);
+      const saved = await uploadRecording(
+        blob,
+        createdAt,
+        analysisPayload
+      );
+
+      if (!saved) {
+        poseStatus.textContent = "Clip did not meet save requirements.";
+        return;
+      }
+
     } catch (err) {
       console.error("Recording upload failed:", err);
       poseStatus.textContent = err instanceof Error ? err.message : "Upload failed";
       return;
     }
-
+    movementWindowClipCount += 1;
     rememberWorkoutAnalysis({ ...localMovement, ...analysisPayload });
     debugCapture("clip_saved", {
       clipIndex: movementWindowClipCount,
@@ -1171,6 +1301,8 @@ async function recordClip() {
     poseStatus.textContent = reachedWorkoutClipLimit()
       ? workoutClipLimitReachedText
       : "Clip analyzed and saved";
+    
+    playAudio("recordingSaved");
   };
 
   recorder.start();
@@ -1181,14 +1313,14 @@ async function recordClip() {
   }, recordingDurationMs);
 }
 
-async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId = null) {
+async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId = null, workoutAnalysis = null, workoutAnalysisText = "", workoutScore = null) {
 
   if (!apiBase) {
     console.warn("Workout not saved: missing apiBase");
     return;
   }
   const fallbackSummary = "Not enough valid strokes were detected to calculate a score.";
-  try {
+  try {    
     const response = await fetch(`${apiBase}/api/workouts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1197,15 +1329,15 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId =
         startedAt,
         completedAt,
         workoutId: workoutId,
-        summary: latestWorkoutAnalysis?.summary || fallbackSummary,
-        workoutScore: latestWorkoutScore,
-        alignmentDetails: latestWorkoutAnalysisText,
-        strokeCount: latestWorkoutAnalysis?.strokeCount ?? null,
-        cadenceSpm: latestWorkoutAnalysis?.cadenceSpm ?? null,
-        rangeOfMotion: latestWorkoutAnalysis?.rangeOfMotion ?? null,
-        armsStraightScore: latestWorkoutAnalysis?.armsStraightScore ?? null,
-        backStraightScore: latestWorkoutAnalysis?.backStraightScore ?? null,
-        dominantSide: latestWorkoutAnalysis?.dominantSide || null,
+        summary: workoutAnalysis?.summary || fallbackSummary,
+        workoutScore: workoutScore,
+        alignmentDetails: workoutAnalysisText,
+        strokeCount: workoutAnalysis?.strokeCount ?? null,
+        cadenceSpm: workoutAnalysis?.cadenceSpm ?? null,
+        rangeOfMotion: workoutAnalysis?.rangeOfMotion ?? null,
+        armsStraightScore: workoutAnalysis?.armsStraightScore ?? null,
+        backStraightScore: workoutAnalysis?.backStraightScore ?? null,
+        dominantSide: workoutAnalysis?.dominantSide || null,
       })
     });
     const payload = await response.json();
@@ -1275,14 +1407,32 @@ async function startCamera() {
     facingMode: preferredFacingMode
   });
 
+  bodyInFramePromptPlayed = false;
+  readyToBeginPromptPlayed = false;
+  noAthletePromptPlayed = false;
+  badArmsStartMs = null;
+  badBackStartMs = null;
+  lastArmsPromptAtMs = 0;
+  lastBackPromptAtMs = 0;
+  lastNoAthletePromptAtMs = 0;
+
   if (running) {
     requestAnimationFrame(loop);
   }
+  playAudio("readyToBegin", { queued: false });
+  readyToBeginPromptPlayed = true;
+
 }
 
 function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) {
   running = false;
   cancelActiveRecording();
+  audioQueue.length = 0;
+  audioPlaying = false;
+  Object.values(audioClips).forEach((clip) => {
+    clip.pause();
+    clip.currentTime = 0;
+  });
   clearWorkoutStopTimeout();
   const deadlineCompletedAt = workoutStopDeadlineMs
     ? new Date(workoutStopDeadlineMs).toISOString()
@@ -1313,6 +1463,13 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
   workoutMovementFrameTimesMs = [];
   movementWindowClipCount = 0;
   lastMovementDebugLogAtMs = 0;
+
+  bodyInFramePromptPlayed = false;
+  readyToBeginPromptPlayed = false;
+  noAthletePromptPlayed = false;
+  badArmsStartMs = null;
+  badBackStartMs = null;
+
   if (viewport) {
     viewport.classList.remove("capture__viewport--unmirror");
   }
@@ -1323,7 +1480,7 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
-    saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId);
+    saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId, latestWorkoutAnalysis, latestWorkoutAnalysisText, latestWorkoutScore);
   }
   workoutStartAt = null;
   latestWorkoutAnalysis = null;
@@ -1373,6 +1530,48 @@ async function switchCamera() {
   } finally {
     cameraSwitchInProgress = false;
   }
+}
+
+function evaluateLiveFormScores(landmarks) {
+  if (!landmarks || !landmarks.length) {
+    return {
+      armsStraightScore: null,
+      backStraightScore: null
+    };
+  }
+
+  const dominantSide = detectDominantSideFromFrames([recordLandmarks(landmarks)]);
+  const side = dominantSide === "left"
+    ? { shoulder: 11, elbow: 13, wrist: 15, hip: 23, head: 7 }
+    : { shoulder: 12, elbow: 14, wrist: 16, hip: 24, head: 8 };
+
+  const frame = recordLandmarks(landmarks);
+
+  const shoulder = usableLandmark(frame, side.shoulder, motionSignalVisibilityFloor);
+  const elbow = usableLandmark(frame, side.elbow, motionSignalVisibilityFloor);
+  const wrist = usableLandmark(frame, side.wrist, motionSignalVisibilityFloor);
+  const hip = usableLandmark(frame, side.hip, motionSignalVisibilityFloor);
+  const head = usableLandmark(frame, side.head, motionSignalVisibilityFloor);
+
+  let armsStraightScore = null;
+  let backStraightScore = null;
+
+  const elbowAngleNorm = computeElbowAngleNormalized(shoulder, elbow, wrist);
+  if (elbowAngleNorm != null) {
+    const elbowClosenessToStraight = 1 - Math.abs(1 - elbowAngleNorm);
+    armsStraightScore = Number((elbowClosenessToStraight * 100).toFixed(2));
+  }
+
+  const backAngleNorm = computeElbowAngleNormalized(hip, shoulder, head);
+  if (backAngleNorm != null) {
+    const backClosenessToStraight = 1 - Math.abs(1 - backAngleNorm);
+    backStraightScore = Number((backClosenessToStraight * 100).toFixed(2));
+  }
+
+  return {
+    armsStraightScore,
+    backStraightScore
+  };
 }
 
 function loop() {
@@ -1426,7 +1625,37 @@ function loop() {
         frameTime - lastRawInFrameAtMs <= inFrameDropoutGraceMs
       );
 
+      if (running && stream && inFrame) {
+        const liveFormScores = evaluateLiveFormScores(result.landmarks);
+        handleFormAudio(frameTime, liveFormScores);
+      } else {
+        badArmsStartMs = null;
+        badBackStartMs = null;
+      }
+
+      if (!rawInFrame) {
+        bodyInFramePromptPlayed = false;
+        readyToBeginPromptPlayed = false;
+
+        if (
+          frameTime >= noAthleteDelayMs &&
+          frameTime - lastNoAthletePromptAtMs >= noAthleteRepeatMs
+        ) {
+          playAudio("noAthleteDetected", { queued: false });
+          lastNoAthletePromptAtMs = frameTime;
+          noAthletePromptPlayed = true;
+        }
+      } else {
+        noAthletePromptPlayed = false;
+
+        if (!bodyInFramePromptPlayed) {
+          playAudio("bodyInFrame", { queued: false });
+          bodyInFramePromptPlayed = true;
+        }
+      }
+
       lastInFrame = inFrame;
+
       poseStatus.classList.toggle("ready", inFrame);
       if (!recordingInProgress) {
         if (!inFrame) {
