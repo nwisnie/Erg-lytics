@@ -266,3 +266,37 @@ def test_score_back_straightness_penalizes_visible_arch() -> None:
 
     assert score is not None
     assert score < 50.0
+
+
+def test_score_arms_straightness_penalizes_large_bend() -> None:
+    anchor_progression = [
+        {"name": "left_wrist", "time": 0.0, "progression_step": 0.0, "x": 0.0, "y": 0.0},
+        {"name": "left_wrist", "time": 1.0, "progression_step": 0.2, "x": 1.0, "y": 0.0},
+        {"name": "left_wrist", "time": 2.0, "progression_step": 0.4, "x": 2.0, "y": 0.0},
+    ]
+
+    side_coordinates = [
+        # frame 0: bent elbow
+        {"name": "left_shoulder", "time": 0.0, "x": 0.0, "y": 0.0},
+        {"name": "left_elbow", "time": 0.0, "x": 1.0, "y": 1.0},
+        {"name": "left_wrist", "time": 0.0, "x": 2.0, "y": 0.0},
+
+        # frame 1: bent elbow
+        {"name": "left_shoulder", "time": 1.0, "x": 1.0, "y": 0.0},
+        {"name": "left_elbow", "time": 1.0, "x": 2.0, "y": 1.0},
+        {"name": "left_wrist", "time": 1.0, "x": 3.0, "y": 0.0},
+
+        # frame 2: bent elbow
+        {"name": "left_shoulder", "time": 2.0, "x": 2.0, "y": 0.0},
+        {"name": "left_elbow", "time": 2.0, "x": 3.0, "y": 1.0},
+        {"name": "left_wrist", "time": 2.0, "x": 4.0, "y": 0.0},
+    ]
+
+    score = _score_arms_straightness(
+        side_coordinates,
+        "left",
+        anchor_progression,
+    )
+
+    assert score is not None
+    assert score < 100.0
