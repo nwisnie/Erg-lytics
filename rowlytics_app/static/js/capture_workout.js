@@ -132,13 +132,42 @@ Object.values(audioClips).forEach((clip) => {
   clip.preload = "auto";
 });
 
-function playAudio(key) {
-  const clip = audioClips[key];
-  if (!clip) return;
+const audioQueue = [];
+let audioPlaying = false;
 
+function playAudio(key) {
+  if (!audioClips[key]) return;
+
+  audioQueue.push(key);
+  playNextAudio();
+}
+
+function playNextAudio() {
+  if (audioPlaying || !audioQueue.length) return;
+
+  const key = audioQueue.shift();
+  const clip = audioClips[key];
+  if (!clip) {
+    playNextAudio();
+    return;
+  }
+
+  audioPlaying = true;
   clip.currentTime = 0;
+
+  const finish = () => {
+    clip.removeEventListener("ended", finish);
+    clip.removeEventListener("error", finish);
+    audioPlaying = false;
+    playNextAudio();
+  };
+
+  clip.addEventListener("ended", finish);
+  clip.addEventListener("error", finish);
+
   clip.play().catch((err) => {
     console.warn(`Could not play audio "${key}":`, err);
+    finish();
   });
 }
 
@@ -1382,6 +1411,12 @@ async function startCamera() {
 function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) {
   running = false;
   cancelActiveRecording();
+  audioQueue.length = 0;
+  audioPlaying = false;
+  Object.values(audioClips).forEach((clip) => {
+    clip.pause();
+    clip.currentTime = 0;
+  });
   clearWorkoutStopTimeout();
   const deadlineCompletedAt = workoutStopDeadlineMs
     ? new Date(workoutStopDeadlineMs).toISOString()
