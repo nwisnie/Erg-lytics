@@ -9,11 +9,7 @@ This document inventories the tests currently present in the repository. Automat
 | Suite | Framework | Test count | Focus |
 | --- | --- | ---: | --- |
 | `tests/test_alignment.py` | `pytest` | 23 | Practice-stroke assembly, progression-step generation, progression matching, and ideal-model coordinate selection |
-| `tests/test_app.py` | `pytest` | 6 | Flask app creation and basic route rendering |
-| `tests/test_auth.py` | `pytest` | 20 | Cognito helpers, token parsing, login URL generation, token exchange, user deletion, session context |
 | `tests/test_capture_workout_save.py` | `pytest` | 3 | Capture-workout save gating, workout-analysis snapshot preservation, and threshold rejection behavior |
-| `tests/test_dynamodb.py` | `pytest` | 37 | DynamoDB resource/table access, profile sync, batch lookup, membership/team queries, pagination helpers |
-| `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and stage prefix header injection |
 | `tests/test_angles.py` | `pytest` | 2 | Normalized joint-angle calculation and zero-length segment validation |
 | `tests/test_app.py` | `pytest` | 8 | Flask app creation, core route rendering, auth URL integration, and static asset availability |
 | `tests/test_auth.py` | `pytest` | 20 | Cognito token parsing, login URL generation, token exchange, token expiry, user deletion, and session helpers |
@@ -26,13 +22,14 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_mock_email.py` | `pytest` | 4 | Mock email composition, default-name fallback, content generation, and send-error propagation |
 | `tests/test_recordings_api.py` | `pytest` | 5 | Recording upload guardrails, daily duration limits, metadata normalization, and date-range filtering |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
+| `tests/test_team_stats_api.py` | `pytest` | 3 | Weekly team statistics route auth checks, user/team aggregate responses, and empty team-state handling |
 | `tests/test_workout_api.py` | `pytest` | 11 | Workout validation, score persistence, date-range filtering, team summary aggregation, and posture scoring helpers |
 | `tests/test_workout_save_integration.py` | `pytest` | 1 | Integration coverage for the workout save API route, verifying workout analysis fields are persisted through the real route/save flow while mocking only the external DynamoDB resource layer |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 241 tests
+Current automated inventory total: 177 tests
 
-- Pytest total: 239 tests
+- Pytest total: 175 tests
 - Playwright total: 2 tests
 
 ## Pytest Inventory
