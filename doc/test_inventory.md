@@ -15,7 +15,7 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_auth.py` | `pytest` | 20 | Cognito token parsing, login URL generation, token exchange, token expiry, user deletion, and session helpers |
 | `tests/test_deviation.py` | `pytest` | 26 | Skeletal deviation math helpers, limb/torso deviation scoring, midpoint handling, and full pose comparison |
 | `tests/test_display_name_flow.py` | `pytest` | 6 | Display-name onboarding, auth callback redirects, gated navigation, and account-name updates |
-| `tests/test_dynamodb.py` | `pytest` | 43 | DynamoDB resource/table access, profile sync, memberships, recordings/workouts date queries, name uniqueness, and identifier resolution |
+| `tests/test_dynamodb.py` | `pytest` | 62 | DynamoDB resource/table access, profile sync, memberships, recordings/workouts date queries, name uniqueness, and identifier resolution |
 | `tests/test_email_integration.py` | `pytest` | 1 | End-to-end `/test-email` route integration with the mock email pipeline |
 | `tests/test_email_routes.py` | `pytest` | 3 | `/test-email` route behavior for missing config, success, and failure paths |
 | `tests/test_lambda.py` | `pytest` | 4 | Lambda adapter behavior and API Gateway stage-prefix header injection |
@@ -128,7 +128,7 @@ Shared pytest bootstrap only. It inserts the project root into `sys.path` so tes
 - `test_clip_threshold_rejection_behavior`
   Confirms capture-workout save gating rejects clips when the score is missing or above the threshold and allows saves when the score is within the accepted range.
 
-### `tests/test_dynamodb.py` (43 tests)
+### `tests/test_dynamodb.py` (62 tests)
 
 - Utility and client/resource setup:
   `test_now_iso_returns_timezone_aware_isoformat`, `test_get_resource_requires_boto3`, `test_get_resource_uses_boto3_resource`
