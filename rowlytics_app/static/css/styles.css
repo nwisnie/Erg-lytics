@@ -1361,6 +1361,42 @@ body {
   font-weight: 500;
 }
 
+.recordings-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.recordings-filter__field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: min(100%, 220px);
+}
+
+.recordings-filter__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted-dark);
+}
+
+.recordings-filter__input {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: var(--color-detail-surface-strong);
+  color: var(--color-detail-text);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+}
+
+.recordings-filter__button {
+  align-self: end;
+  padding: 0.6rem 1rem;
+}
+
 .recordings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1558,6 +1594,16 @@ body {
 
 .snapshot .recordings-panel__header p {
   color: #1e293b;
+}
+
+.snapshot .recordings-filter__label {
+  color: #334155;
+}
+
+.snapshot .recordings-filter__input {
+  background: #f8fafc;
+  color: var(--color-text);
+  border: var(--border-light-med);
 }
 
 .snapshot .recording-card {

@@ -125,3 +125,64 @@ def test_save_recording_metadata_uses_session_user_and_normalizes_fields(
     assert item["userId"] == "user-123"
     assert item["durationSec"] == 5
     assert item["createdAt"] == "2026-04-05T10:15:30+00:00"
+
+
+def test_list_recordings_for_user_passes_created_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recordings_table = MagicMock()
+    s3 = MagicMock()
+    s3.generate_presigned_url.return_value = "https://example.test/clip.webm"
+    captured = {}
+
+    def fake_list_recordings_page(_recordings_table, **kwargs):
+        captured.update(kwargs)
+        return (
+            [
+                {
+                    "recordingId": "rec-1",
+                    "objectKey": "recordings/user-123/clip.webm",
+                    "createdAt": "2026-04-05T10:15:30+00:00",
+                }
+            ],
+            None,
+        )
+
+    monkeypatch.setattr(
+        "rowlytics_app.api_routes.get_recordings_table",
+        lambda: recordings_table,
+    )
+    monkeypatch.setattr("rowlytics_app.api_routes.get_s3_client", lambda: s3)
+    monkeypatch.setattr(
+        "rowlytics_app.api_routes.list_recordings_page",
+        fake_list_recordings_page,
+    )
+
+    response = client.get(
+        "/api/recordings/user-123"
+        "?createdFrom=2026-04-05T04:00:00.000Z"
+        "&createdTo=2026-04-06T03:59:59.999Z"
+    )
+
+    assert response.status_code == 200
+    assert captured["created_from"] == "2026-04-05T04:00:00+00:00"
+    assert captured["created_to"] == "2026-04-06T03:59:59.999000+00:00"
+    assert response.get_json()["recordings"][0]["playbackUrl"] == "https://example.test/clip.webm"
+
+
+def test_list_recordings_for_user_rejects_partial_created_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get_recordings_table = MagicMock()
+    monkeypatch.setattr(
+        "rowlytics_app.api_routes.get_recordings_table",
+        get_recordings_table,
+    )
+
+    response = client.get("/api/recordings/user-123?createdFrom=2026-04-05T04:00:00.000Z")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "createdFrom and createdTo must be provided together"
+    get_recordings_table.assert_not_called()

@@ -4,6 +4,9 @@
   const grid = document.getElementById("recordingsGrid");
   const message = document.getElementById("recordingsMessage");
   const loadMoreBtn = document.getElementById("recordingsLoadMore");
+  const dateFilterForm = document.getElementById("recordingsDateFilterForm");
+  const dateFilterInput = document.getElementById("recordingsDateFilter");
+  const clearFilterBtn = document.getElementById("recordingsClearFilter");
   const userId = document.body?.dataset?.userId;
 
   if (!grid || !message) return;
@@ -26,6 +29,8 @@
   let recordings = [];
   let nextCursor = null;
   let loading = false;
+  let selectedDate = "";
+  let loadRequestId = 0;
 
   const setMessage = (text, tone) => {
     message.textContent = text;
@@ -42,11 +47,34 @@
     loadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
   };
 
+  const getLocalDayRange = (dateValue) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue || "")) return null;
+
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const nextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(nextDay.getTime())) return null;
+
+    return {
+      createdFrom: start.toISOString(),
+      createdTo: new Date(nextDay.getTime() - 1).toISOString(),
+    };
+  };
+
+  const formatSelectedDate = (dateValue) => {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    if (Number.isNaN(date.getTime())) return dateValue;
+    return date.toLocaleDateString();
+  };
+
   const renderEmpty = () => {
     grid.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "recordings-empty";
-    empty.textContent = "No recordings yet.";
+    empty.textContent = selectedDate
+      ? `No recordings found for ${formatSelectedDate(selectedDate)}.`
+      : "No recordings yet.";
     grid.appendChild(empty);
   };
 
@@ -83,7 +111,21 @@
 
   const loadRecordings = async ({ append = false } = {}) => {
     if (append && (!nextCursor || loading)) return;
+    const requestId = loadRequestId + 1;
+    loadRequestId = requestId;
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    const dateRange = getLocalDayRange(selectedDate);
+    if (selectedDate && !dateRange) {
+      recordings = [];
+      renderEmpty();
+      setLoadMoreState(null, false);
+      setMessage("Choose a valid date.", "error");
+      return;
+    }
+    if (dateRange) {
+      params.set("createdFrom", dateRange.createdFrom);
+      params.set("createdTo", dateRange.createdTo);
+    }
     if (append && nextCursor) {
       params.set("cursor", nextCursor);
     }
@@ -102,6 +144,7 @@
       if (!response.ok) {
         throw new Error(payload.error || "Unable to load recordings");
       }
+      if (requestId !== loadRequestId) return;
 
       recordings = append
         ? recordings.concat(payload.recordings || [])
@@ -110,6 +153,7 @@
       setLoadMoreState(payload.nextCursor, false);
       setMessage("");
     } catch (err) {
+      if (requestId !== loadRequestId) return;
       if (!append) {
         recordings = [];
         renderEmpty();
@@ -117,9 +161,11 @@
       setMessage(err.message || "Unable to load recordings", "error");
       setLoadMoreState(nextCursor, false);
     } finally {
-      loading = false;
-      if (loadMoreBtn) {
-        loadMoreBtn.disabled = false;
+      if (requestId === loadRequestId) {
+        loading = false;
+        if (loadMoreBtn) {
+          loadMoreBtn.disabled = false;
+        }
       }
     }
   };
@@ -127,6 +173,31 @@
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener("click", async () => {
       await loadRecordings({ append: true });
+    });
+  }
+
+  if (dateFilterForm) {
+    dateFilterForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      selectedDate = dateFilterInput?.value || "";
+      await loadRecordings();
+    });
+  }
+
+  if (dateFilterInput) {
+    dateFilterInput.addEventListener("change", async () => {
+      selectedDate = dateFilterInput.value || "";
+      await loadRecordings();
+    });
+  }
+
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener("click", async () => {
+      if (dateFilterInput) {
+        dateFilterInput.value = "";
+      }
+      selectedDate = "";
+      await loadRecordings();
     });
   }
 

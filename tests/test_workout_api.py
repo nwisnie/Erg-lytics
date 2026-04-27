@@ -108,6 +108,65 @@ def test_save_workout_persists_back_straight_score(
     assert item["backStraightScore"] == Decimal("88.5")
 
 
+def test_list_workouts_passes_completed_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workouts_table = MagicMock()
+    captured = {}
+
+    def fake_list_workouts_page(_workouts_table, user_id, **kwargs):
+        captured["user_id"] = user_id
+        captured.update(kwargs)
+        return (
+            [
+                {
+                    "workoutId": "workout-1",
+                    "completedAt": "2026-04-05T10:15:30+00:00",
+                }
+            ],
+            None,
+        )
+
+    monkeypatch.setattr("rowlytics_app.api_routes.get_workouts_table", lambda: workouts_table)
+    monkeypatch.setattr(
+        "rowlytics_app.api_routes.list_workouts_page",
+        fake_list_workouts_page,
+    )
+
+    with client.session_transaction() as session:
+        session["user_id"] = "user-123"
+
+    response = client.get(
+        "/api/workouts"
+        "?completedFrom=2026-04-05T04:00:00.000Z"
+        "&completedTo=2026-04-06T03:59:59.999Z"
+    )
+
+    assert response.status_code == 200
+    assert captured["user_id"] == "user-123"
+    assert captured["completed_from"] == "2026-04-05T04:00:00.000Z"
+    assert captured["completed_to"] == "2026-04-06T03:59:59.999Z"
+    assert response.get_json()["workouts"][0]["workoutId"] == "workout-1"
+
+
+def test_list_workouts_rejects_partial_completed_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get_workouts_table = MagicMock()
+    monkeypatch.setattr("rowlytics_app.api_routes.get_workouts_table", get_workouts_table)
+
+    with client.session_transaction() as session:
+        session["user_id"] = "user-123"
+
+    response = client.get("/api/workouts?completedFrom=2026-04-05T04:00:00.000Z")
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "completedFrom and completedTo must be provided together"
+    get_workouts_table.assert_not_called()
+
+
 def test_summarize_team_workouts_averages_available_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
