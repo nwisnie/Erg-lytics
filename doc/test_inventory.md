@@ -27,9 +27,9 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_workout_save_integration.py` | `pytest` | 1 | Integration coverage for the workout save API route, verifying workout analysis fields are persisted through the real route/save flow while mocking only the external DynamoDB resource layer |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 186 tests
+Current automated inventory total: 189 tests
 
-- Pytest total: 184 tests
+- Pytest total: 187 tests
 - Playwright total: 2 tests
 
 ## Pytest Inventory
