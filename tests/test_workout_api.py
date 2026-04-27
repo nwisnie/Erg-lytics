@@ -9,7 +9,11 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from rowlytics_app import create_app
-from rowlytics_app.api_routes import _score_arms_straightness, _score_back_straightness
+from rowlytics_app.api_routes import (
+    _score_arms_straightness,
+    _score_back_straightness,
+    _summarize_team_workouts,
+)
 
 
 @pytest.fixture()
@@ -102,6 +106,46 @@ def test_save_workout_persists_back_straight_score(
     assert response.status_code == 201
     item = workouts_table.put_item.call_args.kwargs["Item"]
     assert item["backStraightScore"] == Decimal("88.5")
+
+
+def test_summarize_team_workouts_averages_available_scores(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workouts_by_user = {
+        "u1": [
+            {
+                "workoutScore": Decimal("80"),
+                "armsStraightScore": Decimal("90"),
+            },
+            {
+                "alignmentDetails": (
+                    "consistency score: 70\n"
+                    "arms straight score: n/a\n"
+                    "back straight score: 60"
+                ),
+            },
+        ],
+        "u2": [
+            {"backStraightScore": 100},
+            {"summary": "No scores for this workout"},
+        ],
+    }
+
+    def fake_list_workouts(_table, user_id: str):
+        return workouts_by_user.get(user_id, [])
+
+    monkeypatch.setattr("rowlytics_app.api_routes.list_workouts", fake_list_workouts)
+
+    stats = _summarize_team_workouts(
+        MagicMock(),
+        [{"userId": "u2"}, {"userId": "u1"}, {"userId": "u1"}],
+    )
+
+    assert stats["memberCount"] == 2
+    assert stats["workoutCount"] == 4
+    assert stats["metrics"]["consistencyScore"] == {"average": 75.0, "count": 2}
+    assert stats["metrics"]["armsStraightScore"] == {"average": 90.0, "count": 1}
+    assert stats["metrics"]["backStraightScore"] == {"average": 80.0, "count": 2}
 
 
 def test_score_arms_straightness_ignores_finish_phase_frames() -> None:

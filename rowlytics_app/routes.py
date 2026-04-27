@@ -87,24 +87,24 @@ TEMPLATE_CARDS: tuple[TemplateCard, ...] = (
         template_name="team_view.html",
     ),
     TemplateCard(
-        slug="manage-team",
-        title="Manage Team",
-        blurb="Currently a placeholder.",
-        image_path=(
-            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
-            "images/team_settings_cool.png"
-            ),
-        template_name="manage_team.html",
-    ),
-    TemplateCard(
         slug="team-stats",
         title="Team Stats",
-        blurb="Currently a placeholder.",
+        blurb="Compare your weekly scores with your team's progress.",
         image_path=(
             "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
             "images/stats_cool.png"
             ),
         template_name="team_stats.html",
+    ),
+    TemplateCard(
+        slug="manage-team",
+        title="Account Settings",
+        blurb="Update your name and manage your account.",
+        image_path=(
+            "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com/"
+            "images/team_settings_cool.png"
+            ),
+        template_name="manage_team.html",
     ),
 )
 
@@ -153,6 +153,8 @@ def landing_page() -> str:
 
 @public_bp.route("/templates/<slug>")
 def template_detail(slug: str) -> str:
+    if slug == "manage-team":
+        return redirect(url_for("public.settings"))
     card = _get_card(slug)
     if card is None:
         abort(404)
