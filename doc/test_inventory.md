@@ -27,11 +27,12 @@ This document inventories the tests currently present in the repository. Automat
 | `tests/test_recordings_api.py` | `pytest` | 5 | Recording upload guardrails, daily duration limits, metadata normalization, and date-range filtering |
 | `tests/test_s3.py` | `pytest` | 3 | S3 client initialization and required configuration checks |
 | `tests/test_workout_api.py` | `pytest` | 11 | Workout validation, score persistence, date-range filtering, team summary aggregation, and posture scoring helpers |
+| `tests/test_workout_save_integration.py` | `pytest` | 1 | Integration coverage for the workout save API route, verifying workout analysis fields are persisted through the real route/save flow while mocking only the external DynamoDB resource layer |
 | `playwright/tests/a11y.spec.js` | `Playwright + axe-core` | 2 | Accessibility baseline checks for `/` and `/signin` |
 
-Current automated inventory total: 240 tests
+Current automated inventory total: 241 tests
 
-- Pytest total: 238 tests
+- Pytest total: 239 tests
 - Playwright total: 2 tests
 
 ## Pytest Inventory
@@ -307,6 +308,15 @@ This suite covers workout API validation and scoring helpers:
 - arms-straightness scoring that ignores finish-phase frames
 - high arms-straightness scoring for small bends
 - back-straightness scoring for aligned posture and visible arching
+
+### `tests/test_workout_save_integration.py` (1 test)
+
+This suite covers the workout save API flow as an integration test:
+
+- posts workout analysis data through the real Flask workout save route
+- verifies the route returns a successful response
+- confirms saved workout data preserves summary, score, alignment details, stroke count, cadence, range of motion, arm/back scores, and dominant side
+- mocks only the external DynamoDB resource layer so the test does not require live AWS access
 
 ## Playwright Accessibility Inventory
 
