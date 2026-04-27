@@ -1,12 +1,12 @@
 (() => {
   const PAGE_SIZE = 8;
 
-  const workGrid = document.getElementById("workoutsworkGrid");
-  const workMessage = document.getElementById("workoutsworkMessage");
-  const workLoadMoreBtn = document.getElementById("workoutsLoadMore");
-  const recGrid = document.getElementById("recordingsworkGrid");
-  const recMessage = document.getElementById("recordingsworkMessage");
-  const recLoadMoreBtn = document.getElementById("recordingsLoadMore");
+  const grid = document.getElementById("workoutsGrid");
+  const message = document.getElementById("workoutsMessage");
+  const loadMoreBtn = document.getElementById("workoutsLoadMore");
+  const dateFilterForm = document.getElementById("workoutsDateFilterForm");
+  const dateFilterInput = document.getElementById("workoutsDateFilter");
+  const clearFilterBtn = document.getElementById("workoutsClearFilter");
   const userId = document.body?.dataset?.userId;
   const workoutDetailBase = document.body?.dataset?.workoutDetailBase || "";
 
@@ -28,11 +28,10 @@
   };
 
   let workouts = [];
-  let recordings = [];
-  let workNextCursor = null;
-  let recNextCursor = null;
-  let workLoading = false;
-  let recLoading = false;
+  let nextCursor = null;
+  let loading = false;
+  let selectedDate = "";
+  let loadRequestId = 0;
 
   const setworkMessage = (text, tone) => {
     workMessage.textContent = text;
@@ -62,6 +61,27 @@
     recLoadMoreBtn.classList.toggle("recordings-load-more--hidden", !recNextCursor);
     recLoadMoreBtn.disabled = isLoading;
     recLoadMoreBtn.textContent = isLoading ? "Loading..." : "Load more clips";
+  };
+
+  const getLocalDayRange = (dateValue) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue || "")) return null;
+
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const nextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(nextDay.getTime())) return null;
+
+    return {
+      completedFrom: start.toISOString(),
+      completedTo: new Date(nextDay.getTime() - 1).toISOString(),
+    };
+  };
+
+  const formatSelectedDate = (dateValue) => {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+    if (Number.isNaN(date.getTime())) return dateValue;
+    return date.toLocaleDateString();
   };
 
   const formatDuration = (seconds) => {
@@ -133,16 +153,10 @@
     grid.innerHTML = "";
     const empty = document.createElement("div");
     empty.className = "recordings-empty";
-    empty.textContent = "No workouts yet. Start a session to see it here.";
-    workGrid.appendChild(empty);
-  };
-
-  const recRenderEmpty = () => {
-    recGrid.innerHTML = "";
-    const empty = document.createElement("div");
-    empty.className = "recordings-empty";
-    empty.textContent = "No recordings yet.";
-    recGrid.appendChild(empty);
+    empty.textContent = selectedDate
+      ? `No workouts found for ${formatSelectedDate(selectedDate)}.`
+      : "No workouts yet. Start a session to see it here.";
+    grid.appendChild(empty);
   };
 
   const renderWorkouts = () => {
@@ -212,10 +226,24 @@
   };
 
   const loadWorkouts = async ({ append = false } = {}) => {
-    if (append && (!workNextCursor || workLoading)) return;
+    if (append && (!nextCursor || loading)) return;
+    const requestId = loadRequestId + 1;
+    loadRequestId = requestId;
     const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-    if (append && workNextCursor) {
-      params.set("cursor", workNextCursor);
+    const dateRange = getLocalDayRange(selectedDate);
+    if (selectedDate && !dateRange) {
+      workouts = [];
+      renderEmpty();
+      setLoadMoreState(null, false);
+      setMessage("Choose a valid date.", "error");
+      return;
+    }
+    if (dateRange) {
+      params.set("completedFrom", dateRange.completedFrom);
+      params.set("completedTo", dateRange.completedTo);
+    }
+    if (append && nextCursor) {
+      params.set("cursor", nextCursor);
     }
 
     workLoading = true;
@@ -230,6 +258,7 @@
       if (!response.ok) {
         throw new Error(payload.error || "Unable to load workouts");
       }
+      if (requestId !== loadRequestId) return;
 
       workouts = append
         ? workouts.concat(payload.workouts || [])
@@ -238,6 +267,7 @@
       setWorkLoadMoreState(payload.workNextCursor, false);
       setworkMessage("");
     } catch (err) {
+      if (requestId !== loadRequestId) return;
       if (!append) {
         workouts = [];
         workRenderEmpty();
@@ -245,9 +275,11 @@
       setworkMessage(err.workMessage || "Unable to load workouts", "error");
       setWorkLoadMoreState(payload.workNextCursor, false);
     } finally {
-      workLoading = false;
-      if (workLoadMoreBtn) {
-        workLoadMoreBtn.disabled = false;
+      if (requestId === loadRequestId) {
+        loading = false;
+        if (loadMoreBtn) {
+          loadMoreBtn.disabled = false;
+        }
       }
     }
   };
@@ -258,85 +290,28 @@
     });
   }
 
-  const renderRecordings = () => {
-    recGrid.innerHTML = "";
-    console.log(recordings.length);
-    if (!recordings.length) {
-      recRenderEmpty();
-      return;
-    }
-
-    recordings.forEach((recording) => {
-      const card = document.createElement("article");
-      card.className = "recording-card";
-
-      const video = document.createElement("video");
-      video.controls = true;
-      video.preload = "metadata";
-      if (recording.playbackUrl) {
-        video.src = recording.playbackUrl;
-      }
-
-      const meta = document.createElement("div");
-      meta.className = "recording-card__meta";
-      const createdAt = recording.createdAt
-        ? new Date(recording.createdAt).toLocaleString()
-        : "Unknown date";
-      meta.textContent = createdAt;
-
-      card.appendChild(video);
-      card.appendChild(meta);
-      recGrid.appendChild(card);
+  if (dateFilterForm) {
+    dateFilterForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      selectedDate = dateFilterInput?.value || "";
+      await loadWorkouts();
     });
-  };
+  }
 
-  const loadRecordings = async ({ append = false } = {}) => {
-    if (append && (!recNextCursor || recLoading)) return;
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-    if (append && recNextCursor) {
-      params.set("cursor", recNextCursor);
-    }
+  if (dateFilterInput) {
+    dateFilterInput.addEventListener("change", async () => {
+      selectedDate = dateFilterInput.value || "";
+      await loadWorkouts();
+    });
+  }
 
-    recLoading = true;
-    setRecLoadMoreState(recNextCursor, true);
-    if (!append) {
-      setrecMessage("Loading recordings...");
-    }
-
-    try {
-      console.log("Fetching recordings with params:", params.toString());
-      const response = await fetch(
-        getApiUrl(`/api/recordings/${encodeURIComponent(userId)}?${params.toString()}`),
-      );
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to load recordings");
+  if (clearFilterBtn) {
+    clearFilterBtn.addEventListener("click", async () => {
+      if (dateFilterInput) {
+        dateFilterInput.value = "";
       }
-
-      recordings = append
-        ? recordings.concat(payload.recordings || [])
-        : (payload.recordings || []);
-      renderRecordings();
-      setRecLoadMoreState(payload.recNextCursor, false);
-      setrecMessage("");
-    } catch (err) {
-      if (!append) {
-        recordings = [];
-        recRenderEmpty();
-      }
-      setrecMessage(err.recMessage || "Unable to load recordings", "error");
-      setRecLoadMoreState(payload.recNextCursor, false);
-    } finally {
-      recLoading = false;
-      if (recLoadMoreBtn) {
-        recLoadMoreBtn.disabled = false;
-      }
-    }
-  };
-
-  if (recLoadMoreBtn) {
-    recLoadMoreBtn.addEventListener("click", async () => {
-      await loadRecordings({ append: true });
+      selectedDate = "";
+      await loadWorkouts();
     });
   }
 

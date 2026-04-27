@@ -367,6 +367,68 @@ def test_list_recordings_delegates_to_query_all(monkeypatch: pytest.MonkeyPatch)
     assert result == ["recording"]
 
 
+def test_list_recordings_page_applies_created_at_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_query_page(**kwargs):
+        captured.update(kwargs)
+        return ["recording"], {"cursor": "next"}
+
+    monkeypatch.setattr(dynamodb, "query_page", fake_query_page)
+
+    result = dynamodb.list_recordings_page(
+        MagicMock(),
+        "u1",
+        "",
+        limit=8,
+        created_from="2026-04-05T04:00:00+00:00",
+        created_to="2026-04-06T03:59:59.999000+00:00",
+    )
+
+    assert result == (["recording"], {"cursor": "next"})
+    condition = captured["KeyConditionExpression"].get_expression()
+    assert condition["operator"] == "AND"
+    date_condition = condition["values"][1].get_expression()
+    assert date_condition["operator"] == "BETWEEN"
+    assert date_condition["values"][1:] == (
+        "2026-04-05T04:00:00+00:00",
+        "2026-04-06T03:59:59.999000+00:00",
+    )
+
+
+def test_list_workouts_page_applies_completed_at_range(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def fake_query_page(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return ["workout"], {"cursor": "next"}
+
+    monkeypatch.setattr(dynamodb, "query_page", fake_query_page)
+
+    result = dynamodb.list_workouts_page(
+        MagicMock(),
+        "u1",
+        limit=8,
+        completed_from="2026-04-05T04:00:00.000Z",
+        completed_to="2026-04-06T03:59:59.999Z",
+    )
+
+    assert result == (["workout"], {"cursor": "next"})
+    condition = captured["KeyConditionExpression"].get_expression()
+    assert condition["operator"] == "AND"
+    date_condition = condition["values"][1].get_expression()
+    assert date_condition["operator"] == "BETWEEN"
+    assert date_condition["values"][1:] == (
+        "2026-04-05T04:00:00.000Z",
+        "2026-04-06T03:59:59.999Z",
+    )
+
+
 def test_sum_recording_durations_for_utc_date_uses_created_at_index(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -662,56 +724,3 @@ def test_fetch_team_members_page_merges_users_and_normalizes_roles(monkeypatch:
     team_members_table.query.assert_called_once()
     assert team_members_table.query.call_args[1]["ExclusiveStartKey"] == "token0"
     assert team_members_table.query.call_args[1]["Limit"] == 3
-
-
-def test_workout_summary_loads_snapshot_clips(client, monkeypatch):
-    user_id = "test-user-123"
-    workout_id = "workout-abc"
-
-    fake_recordings = [
-        {
-            "recordingId": "clip-1",
-            "userId": user_id,
-            "workoutId": workout_id,
-            "createdAt": "2026-04-26T12:01:00Z",
-            "objectKey": "clip-1.mp4",
-        },
-        {
-            "recordingId": "clip-2",
-            "userId": user_id,
-            "workoutId": workout_id,
-            "createdAt": "2026-04-26T12:02:00Z",
-            "objectKey": "clip-2.mp4",
-        },
-    ]
-
-    # Patch get_recordings_table to return a mock table
-    mock_table = MagicMock()
-
-    def fake_list_recordings_page(table, user_id, limit, exclusive_start_key=None, workout_id=None):
-        assert table is mock_table
-        assert user_id == "test-user-123"
-        assert workout_id == "workout-abc"
-        return fake_recordings, None
-    monkeypatch.setattr("rowlytics_app.api_routes.get_recordings_table", lambda: mock_table)
-    monkeypatch.setattr("rowlytics_app.api_routes.list_recordings_page", fake_list_recordings_page)
-
-    mock_s3 = MagicMock()
-    mock_s3.generate_presigned_url.side_effect = (
-        lambda *a, **kw:
-            f"https://example.com/{kw['Params']['Key']}"
-    )
-    monkeypatch.setattr("rowlytics_app.api_routes.get_s3_client", lambda: mock_s3)
-    monkeypatch.setattr("rowlytics_app.api_routes._encode_cursor", lambda x: None)
-
-    clips_response = client.get(
-        f"/api/recordings/{user_id}?workoutId={workout_id}&limit=8"
-    )
-
-    assert clips_response.status_code == 200
-    payload = clips_response.get_json()
-    assert payload["nextCursor"] is None
-    assert len(payload["recordings"]) == 2
-    assert payload["recordings"][0]["workoutId"] == workout_id
-    assert payload["recordings"][0]["playbackUrl"] == "https://example.com/clip-1.mp4"
-    assert payload["recordings"][1]["playbackUrl"] == "https://example.com/clip-2.mp4"

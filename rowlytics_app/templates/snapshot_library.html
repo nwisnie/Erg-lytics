@@ -26,6 +26,25 @@ data-api-base="{{ request.url_root.rstrip('/') }}"
         <h2>Recorded Clips</h2>
         <p>Auto-captured clips appear here after uploads finish.</p>
       </div>
+      <form id="recordingsDateFilterForm" class="recordings-filter" aria-label="Filter recorded clips by date">
+        <div class="recordings-filter__field">
+          <label class="recordings-filter__label" for="recordingsDateFilter">Date</label>
+          <input
+            id="recordingsDateFilter"
+            class="recordings-filter__input"
+            type="date"
+            name="date"
+          >
+        </div>
+        <button class="btn recordings-filter__button" type="submit">Search</button>
+        <button
+          id="recordingsClearFilter"
+          class="btn btn--subtle recordings-filter__button"
+          type="button"
+        >
+          Clear
+        </button>
+      </form>
       <div id="recordingsGrid" class="recordings-grid"></div>
       <button
         id="recordingsLoadMore"

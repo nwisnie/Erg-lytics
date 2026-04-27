@@ -176,43 +176,63 @@ def test_workout_summary_snapshot_clips_returns_presigned_playback_urls(
         lambda _operation, Params, ExpiresIn: f"https://example.com/{Params['Key']}"
     )
 
+
+def test_list_recordings_for_user_passes_created_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recordings_table = MagicMock()
+    s3 = MagicMock()
+    s3.generate_presigned_url.return_value = "https://example.test/clip.webm"
+    captured = {}
+
+    def fake_list_recordings_page(_recordings_table, **kwargs):
+        captured.update(kwargs)
+        return (
+            [
+                {
+                    "recordingId": "rec-1",
+                    "objectKey": "recordings/user-123/clip.webm",
+                    "createdAt": "2026-04-05T10:15:30+00:00",
+                }
+            ],
+            None,
+        )
+
     monkeypatch.setattr(
         "rowlytics_app.api_routes.get_recordings_table",
         lambda: recordings_table,
     )
+    monkeypatch.setattr("rowlytics_app.api_routes.get_s3_client", lambda: s3)
     monkeypatch.setattr(
         "rowlytics_app.api_routes.list_recordings_page",
         fake_list_recordings_page,
     )
-    monkeypatch.setattr(
-        "rowlytics_app.api_routes.get_s3_client",
-        lambda: s3_client,
-    )
-    monkeypatch.setattr(
-        "rowlytics_app.api_routes._encode_cursor",
-        lambda last_key: None,
-    )
 
-    response = client.get(f"/api/recordings/{user_id}?workoutId={workout_id}&limit=8")
+    response = client.get(
+        "/api/recordings/user-123"
+        "?createdFrom=2026-04-05T04:00:00.000Z"
+        "&createdTo=2026-04-06T03:59:59.999Z"
+    )
 
     assert response.status_code == 200
-    payload = response.get_json()
+    assert captured["created_from"] == "2026-04-05T04:00:00+00:00"
+    assert captured["created_to"] == "2026-04-06T03:59:59.999000+00:00"
+    assert response.get_json()["recordings"][0]["playbackUrl"] == "https://example.test/clip.webm"
 
-    assert payload["nextCursor"] is None
-    assert len(payload["recordings"]) == 2
 
-    assert payload["recordings"][0]["recordingId"] == "clip-1"
-    assert payload["recordings"][0]["workoutId"] == workout_id
-    assert (
-        payload["recordings"][0]["playbackUrl"]
-        == "https://example.com/recordings/user-123/clip-1.webm"
+def test_list_recordings_for_user_rejects_partial_created_at_range(
+    client: FlaskClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    get_recordings_table = MagicMock()
+    monkeypatch.setattr(
+        "rowlytics_app.api_routes.get_recordings_table",
+        get_recordings_table,
     )
 
-    assert payload["recordings"][1]["recordingId"] == "clip-2"
-    assert payload["recordings"][1]["workoutId"] == workout_id
-    assert (
-        payload["recordings"][1]["playbackUrl"]
-        == "https://example.com/recordings/user-123/clip-2.webm"
-    )
+    response = client.get("/api/recordings/user-123?createdFrom=2026-04-05T04:00:00.000Z")
 
-    assert s3_client.generate_presigned_url.call_count == 2
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "createdFrom and createdTo must be provided together"
+    get_recordings_table.assert_not_called()

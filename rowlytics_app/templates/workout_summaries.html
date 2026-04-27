@@ -28,6 +28,25 @@ data-workout-detail-base="{{ url_for('public.workout_summary_detail', workout_id
         <h2>Past Workouts</h2>
         <p>Each entry includes duration, timestamp, summary, and workout scores when available.</p>
       </div>
+      <form id="workoutsDateFilterForm" class="recordings-filter" aria-label="Filter workout summaries by date">
+        <div class="recordings-filter__field">
+          <label class="recordings-filter__label" for="workoutsDateFilter">Date</label>
+          <input
+            id="workoutsDateFilter"
+            class="recordings-filter__input"
+            type="date"
+            name="date"
+          >
+        </div>
+        <button class="btn recordings-filter__button" type="submit">Search</button>
+        <button
+          id="workoutsClearFilter"
+          class="btn btn--subtle recordings-filter__button"
+          type="button"
+        >
+          Clear
+        </button>
+      </form>
       <div id="workoutsGrid" class="recordings-grid"></div>
       <button
         id="workoutsLoadMore"
