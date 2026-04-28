@@ -88,4 +88,3 @@ def test_save_workout_route_persists_analysis_fields(client, fake_dynamo):
     assert saved_item["armsStraightScore"] == Decimal("72.0")
     assert saved_item["backStraightScore"] == Decimal("88.0")
     assert saved_item["dominantSide"] == "left"
-    

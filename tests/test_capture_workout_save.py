@@ -76,4 +76,3 @@ def test_clip_threshold_rejection_behavior():
     assert should_save(120.0) is False
     assert should_save(100.0) is True
     assert should_save(72.5) is True
-    

@@ -90,4 +90,3 @@ def test_signin_route_renders(client: FlaskClient) -> None:
 def test_static_css_loads(client: FlaskClient) -> None:
     response = client.get("/static/css/styles.css")
     assert response.status_code == 200
-    
