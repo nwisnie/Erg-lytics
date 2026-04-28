@@ -1,9 +1,7 @@
 """Tests for workout API validation."""
 from __future__ import annotations
 
-import json
 from decimal import Decimal
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -59,23 +57,73 @@ def _build_consistency_test_frames(
     return frames
 
 
-def _load_example_clip_frames(filename: str) -> tuple[list[list[dict | None]], float]:
-    path = Path(__file__).resolve().parents[1] / "example_clips" / filename
-    payload = json.loads(path.read_text())
-    return payload["recordedLandmarkFrames"], float(payload["recordingDurationSec"])
+def _build_export_like_gate_frames(
+    cycle_offsets: list[float],
+    *,
+    bent_arms: bool,
+    hunched_back: bool,
+    dominant_side: str = "left",
+) -> tuple[list[list[dict | None]], float, str]:
+    phase_sequence = [0.18, 0.34, 0.50, 0.66, 0.82]
+    landmark_indices = {
+        "nose": 0,
+        "left_ear": 7,
+        "right_ear": 8,
+        "left_shoulder": 11,
+        "right_shoulder": 12,
+        "left_elbow": 13,
+        "right_elbow": 14,
+        "left_wrist": 15,
+        "right_wrist": 16,
+        "left_hip": 23,
+        "right_hip": 24,
+        "left_knee": 25,
+        "right_knee": 26,
+        "left_ankle": 27,
+        "right_ankle": 28,
+    }
 
+    def point(x: float, y: float) -> dict[str, float]:
+        return {"x": round(x, 6), "y": round(y, 6), "visibility": 0.99}
 
-def _load_example_gate_frames(
-    filename: str,
-) -> tuple[list[list[dict | None]], float, str | None]:
-    path = Path(__file__).resolve().parents[1] / "example_clips" / filename
-    payload = json.loads(path.read_text())
-    gate = payload["gateMovement"]
-    return (
-        gate["gateFrames"],
-        float(gate["gateDurationSec"]),
-        gate.get("dominantSide"),
-    )
+    frames: list[list[dict | None]] = []
+    side_prefix = "left" if dominant_side == "left" else "right"
+    for offset in cycle_offsets:
+        for wrist_x in phase_sequence:
+            frame: list[dict | None] = [None] * 33
+            base_x = offset * 0.08
+            base_y = offset * 0.5
+            hip_x = 0.28 + base_x
+            hip_y = 0.60 + base_y
+            shoulder_x = 0.40 + base_x
+            shoulder_y = 0.38 + base_y
+            wrist_y = 0.41 + (offset * 0.15)
+
+            if bent_arms:
+                elbow_x = wrist_x - 0.04 + (offset * 0.04)
+                elbow_y = 0.29 + base_y
+            else:
+                elbow_x = ((shoulder_x + wrist_x) / 2.0) + (offset * 0.01)
+                elbow_y = (shoulder_y + wrist_y) / 2.0
+
+            if hunched_back:
+                ear_x = shoulder_x + 0.04
+                ear_y = shoulder_y + 0.10
+            else:
+                ear_x = shoulder_x + 0.11
+                ear_y = shoulder_y - 0.11
+
+            frame[landmark_indices["nose"]] = point(ear_x - 0.01, ear_y + 0.01)
+            frame[landmark_indices[f"{side_prefix}_ear"]] = point(ear_x, ear_y)
+            frame[landmark_indices[f"{side_prefix}_shoulder"]] = point(shoulder_x, shoulder_y)
+            frame[landmark_indices[f"{side_prefix}_elbow"]] = point(elbow_x, elbow_y)
+            frame[landmark_indices[f"{side_prefix}_wrist"]] = point(wrist_x, wrist_y)
+            frame[landmark_indices[f"{side_prefix}_hip"]] = point(hip_x, hip_y)
+            frame[landmark_indices[f"{side_prefix}_knee"]] = point(hip_x + 0.03, hip_y + 0.18)
+            frame[landmark_indices[f"{side_prefix}_ankle"]] = point(hip_x + 0.05, hip_y + 0.34)
+            frames.append(frame)
+
+    return frames, 5.0, dominant_side
 
 
 def test_save_workout_rejects_duration_over_one_hour(
@@ -269,11 +317,15 @@ def test_analyze_landmark_frames_penalizes_inconsistent_timing() -> None:
 
 
 def test_exported_example_good_clip_scores_form_higher_than_bad_clip() -> None:
-    good_frames, good_duration, good_side = _load_example_gate_frames(
-        "rowlytics-capture-debug-clip-1-2026-04-28T03-15-13-704Z.json",
+    good_frames, good_duration, good_side = _build_export_like_gate_frames(
+        [0.0, 0.02, -0.01],
+        bent_arms=False,
+        hunched_back=False,
     )
-    bad_frames, bad_duration, bad_side = _load_example_gate_frames(
-        "rowlytics-capture-debug-clip-1-2026-04-28T03-20-28-534Z.json",
+    bad_frames, bad_duration, bad_side = _build_export_like_gate_frames(
+        [0.0, 0.09, -0.08],
+        bent_arms=True,
+        hunched_back=True,
     )
 
     good = _analyze_landmark_frames(
@@ -299,8 +351,10 @@ def test_exported_example_good_clip_scores_form_higher_than_bad_clip() -> None:
 
 
 def test_analyze_landmark_frames_respects_dominant_side_hint_for_exported_clip() -> None:
-    bad_frames, bad_duration, bad_side = _load_example_gate_frames(
-        "rowlytics-capture-debug-clip-1-2026-04-28T03-20-28-534Z.json",
+    bad_frames, bad_duration, bad_side = _build_export_like_gate_frames(
+        [0.0, 0.09, -0.08],
+        bent_arms=True,
+        hunched_back=True,
     )
 
     hinted = _analyze_landmark_frames(
