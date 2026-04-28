@@ -112,10 +112,17 @@ SIDE_PROFILE_LANDMARKS = {
         "right_ankle",
     ),
 }
+SIDE_PROFILE_LANDMARK_INDICES = {
+    "left": (11, 13, 15, 23, 25, 27),
+    "right": (12, 14, 16, 24, 26, 28),
+}
 # Landmarks below this visibility threshold are ignored.
 # This means lighting, clothing, body occlusion, camera quality, and framing
 # can disproportionately reduce usable data and degrade scoring reliability.
 MIN_VISIBILITY_FOR_ANALYSIS = 0.12
+FRAME_EDGE_MARGIN = 0.06
+MIN_ACTIVE_SEGMENT_FRAMES = 6
+MIN_SIDE_PROFILE_VISIBLE_POINTS = 4
 MIN_STROKES_REQUIRED = 3
 MIN_RANGE_OF_MOTION = 0.12
 MIN_STROKE_CYCLE_SEC = 0.35
@@ -162,6 +169,103 @@ def _coerce_positive_duration_seconds(value):
     if duration is None or duration <= 0:
         return None
     return int(round(duration))
+
+
+def _landmark_visible_in_frame(
+    frame,
+    landmark_index,
+    *,
+    visibility_floor=MIN_VISIBILITY_FOR_ANALYSIS,
+    margin=FRAME_EDGE_MARGIN,
+):
+    if not isinstance(frame, list) or landmark_index >= len(frame):
+        return None
+
+    landmark = frame[landmark_index]
+    if not isinstance(landmark, dict):
+        return None
+
+    x_val = _coerce_float(landmark.get("x"))
+    y_val = _coerce_float(landmark.get("y"))
+    visibility = _coerce_float(landmark.get("visibility"))
+    if x_val is None or y_val is None:
+        return None
+    if visibility is not None and visibility < visibility_floor:
+        return None
+    if not (margin <= x_val <= 1 - margin and margin <= y_val <= 1 - margin):
+        return None
+
+    return landmark
+
+
+def _frame_has_side_profile_chain(frame, side_name):
+    indices = SIDE_PROFILE_LANDMARK_INDICES[side_name]
+    visible_count = sum(
+        1 for landmark_index in indices if _landmark_visible_in_frame(frame, landmark_index)
+    )
+    shoulder_visible = _landmark_visible_in_frame(frame, indices[0]) is not None
+    hip_visible = _landmark_visible_in_frame(frame, indices[3]) is not None
+    return (
+        shoulder_visible
+        and hip_visible
+        and visible_count >= MIN_SIDE_PROFILE_VISIBLE_POINTS
+    )
+
+
+def _trim_frames_to_active_segment(frames, clip_duration_sec, dominant_side_hint=None):
+    if not isinstance(frames, list) or len(frames) < 2:
+        return frames, clip_duration_sec
+
+    if dominant_side_hint in SIDE_PROFILE_LANDMARK_INDICES:
+        candidate_sides = (dominant_side_hint,)
+    else:
+        candidate_sides = ("left", "right")
+
+    best_start = None
+    best_end = None
+    current_start = None
+
+    for frame_index, frame in enumerate(frames):
+        frame_is_valid = any(
+            _frame_has_side_profile_chain(frame, side_name)
+            for side_name in candidate_sides
+        )
+        if frame_is_valid and current_start is None:
+            current_start = frame_index
+            continue
+        if frame_is_valid:
+            continue
+        if current_start is None:
+            continue
+
+        current_end = frame_index - 1
+        if (
+            best_start is None
+            or (current_end - current_start) > (best_end - best_start)
+        ):
+            best_start = current_start
+            best_end = current_end
+        current_start = None
+
+    if current_start is not None:
+        current_end = len(frames) - 1
+        if (
+            best_start is None
+            or (current_end - current_start) > (best_end - best_start)
+        ):
+            best_start = current_start
+            best_end = current_end
+
+    if best_start is None or best_end is None:
+        return frames, clip_duration_sec
+
+    trimmed_frames = frames[best_start:best_end + 1]
+    if len(trimmed_frames) < MIN_ACTIVE_SEGMENT_FRAMES:
+        return frames, clip_duration_sec
+
+    frame_interval_sec = clip_duration_sec / max(len(frames) - 1, 1)
+    trimmed_duration_sec = frame_interval_sec * max(len(trimmed_frames) - 1, 1)
+    return trimmed_frames, round(trimmed_duration_sec, 6)
 
 
 def _parse_iso_datetime(value):
@@ -444,13 +548,22 @@ def _select_anchor_landmark(coordinates, candidates=None):
     return best_name, sorted(best_coords, key=lambda item: item["time"])
 
 
-def _consistency_score(mean_spread):
+def _consistency_score(mean_spread, *, shape_aware=False):
     if mean_spread is None:
         return None
-    # Whole-clip repeatability needs a steeper penalty curve than the previous
-    # single-frame alignment heuristic, otherwise visibly drifty clips still
-    # score near-perfect.
-    raw_score = 100 - (mean_spread * 620)
+    if shape_aware:
+        adjusted_spread = max(0.0, mean_spread - 0.03)
+        falloff_scale = 0.04
+        falloff_power = 1.8
+    else:
+        adjusted_spread = max(0.0, mean_spread - 0.01)
+        falloff_scale = 0.03
+        falloff_power = 1.5
+
+    if adjusted_spread <= 1e-9:
+        return 100.0
+
+    raw_score = 100.0 * math.exp(-((adjusted_spread / falloff_scale) ** falloff_power))
     return round(max(0, min(100, raw_score)), 2)
 
 
@@ -759,7 +872,7 @@ def _compute_consistency_metrics(
     combined_spread = None
     if spatial_spread is not None:
         if shape_spread is not None:
-            combined_spread = spatial_spread + timing_penalty + amplitude_penalty
+            combined_spread = spatial_spread + (timing_penalty * 0.20) + (amplitude_penalty * 0.20)
         else:
             combined_spread = (spatial_spread * 3.0) + timing_penalty + amplitude_penalty
 
@@ -1348,6 +1461,11 @@ def _analyze_landmark_frames(
     dominant_side_hint=None,
     signal_strategy_hint=None,
 ):
+    frames, clip_duration_sec = _trim_frames_to_active_segment(
+        frames,
+        clip_duration_sec,
+        dominant_side_hint=dominant_side_hint,
+    )
     raw_coordinates = _build_coordinate_series(frames, clip_duration_sec)
     coordinates = _smooth_coordinates(raw_coordinates)
     dominant_side = _resolve_dominant_side(
@@ -1406,7 +1524,10 @@ def _analyze_landmark_frames(
         anchor_coordinates=raw_anchor_coords if raw_anchor_name == anchor_name else anchor_coords,
     )
     mean_distance = consistency_metrics["meanDistance"]
-    score = _consistency_score(mean_distance)
+    score = _consistency_score(
+        mean_distance,
+        shape_aware=consistency_metrics["shapeSpread"] is not None,
+    )
     arms_straight_score = _score_arms_straightness(
         side_coordinates,
         dominant_side,

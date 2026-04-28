@@ -68,6 +68,7 @@ const recordingCooldownMs = 3000;
 const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
+const activeSegmentMinFrames = 6;
 const workoutSummaryText = "Workout session";
 const workoutDurationLimitText = (
   "Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day."
@@ -549,6 +550,109 @@ function usableLandmark(frame, index, visibilityFloor = 0.2) {
   const visibility = landmark.visibility == null ? 1 : asNumber(landmark.visibility);
   if (visibility != null && visibility < visibilityFloor) return null;
   return landmark;
+}
+
+function frameHasSideProfileChain(frame, preferredSide = null) {
+  const margin = 0.06;
+  const sideEntries = preferredSide === "left"
+    ? [["left", SIDE_PROFILE_LEFT]]
+    : preferredSide === "right"
+      ? [["right", SIDE_PROFILE_RIGHT]]
+      : [
+        ["left", SIDE_PROFILE_LEFT],
+        ["right", SIDE_PROFILE_RIGHT]
+      ];
+
+  return sideEntries.some(([, indices]) => {
+    const visibleCount = indices.reduce((count, index) => {
+      const landmark = usableLandmark(frame, index, sideProfileVisibilityThreshold);
+      if (!landmark) return count;
+      if (
+        landmark.x >= margin &&
+        landmark.x <= 1 - margin &&
+        landmark.y >= margin &&
+        landmark.y <= 1 - margin
+      ) {
+        return count + 1;
+      }
+      return count;
+    }, 0);
+    const shoulder = usableLandmark(frame, indices[0], sideProfileVisibilityThreshold);
+    const hip = usableLandmark(frame, indices[3], sideProfileVisibilityThreshold);
+    const shoulderInBounds = shoulder &&
+      shoulder.x >= margin &&
+      shoulder.x <= 1 - margin &&
+      shoulder.y >= margin &&
+      shoulder.y <= 1 - margin;
+    const hipInBounds = hip &&
+      hip.x >= margin &&
+      hip.x <= 1 - margin &&
+      hip.y >= margin &&
+      hip.y <= 1 - margin;
+    return Boolean(shoulderInBounds && hipInBounds && visibleCount >= sideProfileMinVisiblePoints);
+  });
+}
+
+function trimFramesToActiveSegment(frames, clipDurationSec, preferredSide = null) {
+  if (!Array.isArray(frames) || frames.length < 2) {
+    return {
+      frames: Array.isArray(frames) ? frames : [],
+      durationSec: Number(clipDurationSec || 0),
+    };
+  }
+
+  let bestStart = null;
+  let bestEnd = null;
+  let currentStart = null;
+
+  frames.forEach((frame, index) => {
+    const valid = frameHasSideProfileChain(frame, preferredSide);
+    if (valid && currentStart === null) {
+      currentStart = index;
+      return;
+    }
+    if (valid) {
+      return;
+    }
+    if (currentStart === null) {
+      return;
+    }
+    const currentEnd = index - 1;
+    if (
+      bestStart === null ||
+      (currentEnd - currentStart) > (bestEnd - bestStart)
+    ) {
+      bestStart = currentStart;
+      bestEnd = currentEnd;
+    }
+    currentStart = null;
+  });
+
+  if (currentStart !== null) {
+    const currentEnd = frames.length - 1;
+    if (
+      bestStart === null ||
+      (currentEnd - currentStart) > (bestEnd - bestStart)
+    ) {
+      bestStart = currentStart;
+      bestEnd = currentEnd;
+    }
+  }
+
+  if (bestStart === null || bestEnd === null) {
+    return { frames, durationSec: clipDurationSec };
+  }
+
+  const trimmedFrames = frames.slice(bestStart, bestEnd + 1);
+  if (trimmedFrames.length < activeSegmentMinFrames) {
+    return { frames, durationSec: clipDurationSec };
+  }
+
+  const frameIntervalSec = clipDurationSec / Math.max(frames.length - 1, 1);
+  return {
+    frames: trimmedFrames,
+    durationSec: Number((frameIntervalSec * Math.max(trimmedFrames.length - 1, 1)).toFixed(6)),
+  };
 }
 
 function detectDominantSideFromFrames(frames) {
@@ -1411,29 +1515,7 @@ async function ensurePoseReady() {
 
 function fullBodyInFrame(landmarks) {
   if (!landmarks || landmarks.length === 0) return false;
-  const lms = landmarks[0];
-  const margin = 0.06;
-
-  const isVisibleInFrame = (lm) => {
-    if (!lm) return false;
-    const visibility = lm.visibility == null ? 1 : lm.visibility;
-    return visibility >= sideProfileVisibilityThreshold &&
-      lm.x >= margin &&
-      lm.x <= 1 - margin &&
-      lm.y >= margin &&
-      lm.y <= 1 - margin;
-  };
-
-  const sideChainReady = (indices) => {
-    const visibleCount = indices.reduce((count, index) => {
-      return count + (isVisibleInFrame(lms[index]) ? 1 : 0);
-    }, 0);
-    const hasShoulder = isVisibleInFrame(lms[indices[0]]);
-    const hasHip = isVisibleInFrame(lms[indices[3]]);
-    return hasShoulder && hasHip && visibleCount >= sideProfileMinVisiblePoints;
-  };
-
-  return sideChainReady(SIDE_PROFILE_LEFT) || sideChainReady(SIDE_PROFILE_RIGHT);
+  return frameHasSideProfileChain(recordLandmarks(landmarks));
 }
 
 function resetRecordingTimers() {
@@ -1644,14 +1726,36 @@ async function recordClip(gateMovement = null) {
     }
 
     const clipDurationSec = recordingDurationMs / 1000;
-    const localMovement = evaluateMovementGate(
+    const preferredSide = gateMovement?.dominantSide || null;
+    const trimmedRecordedSegment = trimFramesToActiveSegment(
       recordedLandmarkFrames,
-      clipDurationSec
+      clipDurationSec,
+      preferredSide,
     );
-    const useGateFramesForAnalysis = gateFrames.length >= recordedLandmarkFrames.length &&
-      gateDurationSec > clipDurationSec;
-    const scoringFrames = useGateFramesForAnalysis ? gateFrames : recordedLandmarkFrames;
-    const scoringDurationSec = useGateFramesForAnalysis ? gateDurationSec : clipDurationSec;
+    const trimmedGateSegment = trimFramesToActiveSegment(
+      gateFrames,
+      gateDurationSec,
+      preferredSide,
+    );
+    const localMovement = evaluateMovementGate(
+      trimmedRecordedSegment.frames,
+      trimmedRecordedSegment.durationSec
+    );
+    const gateLooksCleaner = trimmedGateSegment.frames.length >= activeSegmentMinFrames && (
+      ((gateMovement?.movementQualified ?? false) && !localMovement.movementQualified) ||
+      ((asNumber(gateMovement?.strokeCount) ?? 0) > (asNumber(localMovement.strokeCount) ?? 0)) ||
+      (trimmedGateSegment.frames.length > trimmedRecordedSegment.frames.length)
+    );
+    const useGateFramesForAnalysis = gateLooksCleaner || (
+      trimmedGateSegment.frames.length >= trimmedRecordedSegment.frames.length &&
+      trimmedGateSegment.durationSec > trimmedRecordedSegment.durationSec
+    );
+    const scoringFrames = useGateFramesForAnalysis
+      ? trimmedGateSegment.frames
+      : trimmedRecordedSegment.frames;
+    const scoringDurationSec = useGateFramesForAnalysis
+      ? trimmedGateSegment.durationSec
+      : trimmedRecordedSegment.durationSec;
     const scoringFrameSource = useGateFramesForAnalysis ? "gate_window" : "recorded_clip";
     const mergedMovement = {
       ...localMovement,
@@ -1768,6 +1872,8 @@ async function recordClip(gateMovement = null) {
       clipIndex: movementWindowClipCount,
       recordedFrames: recordedLandmarkFrames,
       gateFrames,
+      trimmedRecordedFrames: trimmedRecordedSegment.frames,
+      trimmedGateFrames: trimmedGateSegment.frames,
       scoringFrames,
       scoringFrameSource,
       scoringDurationSec,

@@ -323,7 +323,7 @@ def test_exported_example_good_clip_scores_form_higher_than_bad_clip() -> None:
         hunched_back=False,
     )
     bad_frames, bad_duration, bad_side = _build_export_like_gate_frames(
-        [0.0, 0.09, -0.08],
+        [0.0, 0.16, -0.14],
         bent_arms=True,
         hunched_back=True,
     )
@@ -348,11 +348,12 @@ def test_exported_example_good_clip_scores_form_higher_than_bad_clip() -> None:
     assert good["armsStraightScore"] > bad["armsStraightScore"]
     assert good["backStraightScore"] > bad["backStraightScore"]
     assert good["score"] > bad["score"]
+    assert good["score"] - bad["score"] >= 30.0
 
 
 def test_analyze_landmark_frames_respects_dominant_side_hint_for_exported_clip() -> None:
     bad_frames, bad_duration, bad_side = _build_export_like_gate_frames(
-        [0.0, 0.09, -0.08],
+        [0.0, 0.16, -0.14],
         bent_arms=True,
         hunched_back=True,
     )
@@ -366,6 +367,32 @@ def test_analyze_landmark_frames_respects_dominant_side_hint_for_exported_clip()
 
     assert bad_side == "left"
     assert hinted["dominantSide"] == "left"
+
+
+def test_analyze_landmark_frames_ignores_invalid_trailing_frames_after_dismount() -> None:
+    frames, clip_duration_sec, dominant_side = _build_export_like_gate_frames(
+        [0.0, 0.02, -0.01],
+        bent_arms=False,
+        hunched_back=False,
+    )
+    dismount_tail = [[None] * 33 for _ in range(6)]
+
+    baseline = _analyze_landmark_frames(
+        frames,
+        clip_duration_sec,
+        require_movement_gate=False,
+        dominant_side_hint=dominant_side,
+    )
+    with_dismount_tail = _analyze_landmark_frames(
+        [*frames, *dismount_tail],
+        clip_duration_sec,
+        require_movement_gate=False,
+        dominant_side_hint=dominant_side,
+    )
+
+    assert baseline["score"] is not None
+    assert with_dismount_tail["score"] is not None
+    assert with_dismount_tail["score"] >= baseline["score"] - 2.0
 
 
 def test_list_workouts_passes_completed_at_range(
