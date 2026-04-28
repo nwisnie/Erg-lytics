@@ -339,7 +339,6 @@ Resources:
           ROWLYTICS_COGNITO_USER_POOL_ID: !If [CreateManagedResources, !Ref UserPool, !Ref ExistingUserPoolId]
           SES_FROM_EMAIL: !Ref SesFromEmail
           SES_TEST_TO: !Ref SesTestTo
-          WEEKLY_SUMMARY_TEST_TEAM_ID: 0a134c096ca740738051ee0a46a34370
       Policies:
         - AWSLambdaBasicExecutionRole
         - Statement:
@@ -479,7 +478,7 @@ Resources:
         WeeklyCoachSummarySchedule:
           Type: Schedule
           Properties:
-            Schedule: rate(7 days)
+            Schedule: rate(1 minute)
             Enabled: true
             Input: '{ "scheduled_task": "weekly_coach_summary" }'
 

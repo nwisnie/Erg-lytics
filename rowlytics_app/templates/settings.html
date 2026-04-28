@@ -8,6 +8,7 @@
 data-api-base="{{ request.url_root.rstrip('/') }}"
 data-account-name-url="{{ url_for('api.update_account_name') }}"
 data-account-delete-url="{{ url_for('api.delete_account') }}"
+data-account-email-updates-url="{{ url_for('api.update_account_email_updates') }}"
 data-home-url="{{ url_for('public.landing_page') }}"
 data-signin-url="{{ url_for('public.signin') }}"
 data-require-display-name="{{ 'true' if display_name_required else 'false' }}"
@@ -45,6 +46,58 @@ data-require-display-name="{{ 'true' if display_name_required else 'false' }}"
         <button class="btn" type="submit">Save</button>
       </div>
     </form>
+
+    {% if is_coach %}
+      <div class="team-panel__section">
+        <h3>Email updates</h3>
+        <p class="team-panel__hint">
+          Choose how often you want coach summary emails.
+        </p>
+
+        <form id="emailUpdatesForm" class="team-form">
+          <label class="team-form__label" for="emailUpdateIntervalValue">
+            Send coach updates every
+          </label>
+
+          <div class="team-form__row">
+            <input
+              id="emailUpdateIntervalValue"
+              class="team-form__input"
+              type="number"
+              name="emailUpdateIntervalValue"
+              min="1"
+              step="1"
+              value="{{ email_update_interval_value }}"
+              required
+            />
+
+            <select
+              id="emailUpdateIntervalUnit"
+              class="team-form__input"
+              name="emailUpdateIntervalUnit"
+            >
+              <option value="minutes" {% if email_update_interval_unit == "minutes" %}selected{% endif %}>
+                Minutes
+              </option>
+              <option value="hours" {% if email_update_interval_unit == "hours" %}selected{% endif %}>
+                Hours
+              </option>
+              <option value="days" {% if email_update_interval_unit == "days" %}selected{% endif %}>
+                Days
+              </option>
+              <option value="weeks" {% if email_update_interval_unit == "weeks" %}selected{% endif %}>
+                Weeks
+              </option>
+              <option value="months" {% if email_update_interval_unit == "months" %}selected{% endif %}>
+                Months
+              </option>
+            </select>
+
+            <button class="btn" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+    {% endif %}
 
     <div class="team-panel__section">
       <h3>Delete account</h3>

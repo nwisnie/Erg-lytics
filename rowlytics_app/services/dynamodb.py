@@ -258,6 +258,10 @@ def fetch_team_members(users_table, team_members_table, team_id: str, allowed_ro
             "joinedAt": item.get("joinedAt"),
             "name": user.get("name"),
             "email": user.get("email"),
+            "emailUpdateIntervalValue": user.get("emailUpdateIntervalValue", 1),
+            "emailUpdateIntervalUnit": user.get("emailUpdateIntervalUnit", "weeks"),
+            "emailUpdateIntervalUpdatedAt": user.get("emailUpdateIntervalUpdatedAt"),
+            "lastCoachSummarySentAt": user.get("lastCoachSummarySentAt"),
         })
 
     logger.debug(f"fetch_team_members: successfully built member list with {len(members)} members")
@@ -598,6 +602,7 @@ def fetch_team_members_page(
             "joinedAt": item.get("joinedAt"),
             "name": user.get("name"),
             "email": user.get("email"),
+            "emailUpdateFrequency": user.get("emailUpdateFrequency", "weekly"),
         })
     return members, response.get("LastEvaluatedKey")
 
@@ -759,3 +764,58 @@ def resolve_user_by_identifier(users_table, identifier: str) -> dict | None:
     if len(unique_matches) > 1:
         raise ValueError("Multiple users found with that display name. Use a user ID instead.")
     return next(iter(unique_matches.values()))
+
+
+EMAIL_UPDATE_INTERVAL_UNITS = {"minutes", "hours", "days", "weeks", "months"}
+DEFAULT_EMAIL_UPDATE_INTERVAL_VALUE = 1
+DEFAULT_EMAIL_UPDATE_INTERVAL_UNIT = "weeks"
+
+
+def normalize_email_update_interval(value, unit) -> tuple[int, str]:
+    try:
+        interval_value = int(value)
+    except (TypeError, ValueError):
+        interval_value = DEFAULT_EMAIL_UPDATE_INTERVAL_VALUE
+
+    if interval_value < 1:
+        interval_value = DEFAULT_EMAIL_UPDATE_INTERVAL_VALUE
+
+    interval_unit = str(unit or "").strip().lower()
+    if interval_unit not in EMAIL_UPDATE_INTERVAL_UNITS:
+        interval_unit = DEFAULT_EMAIL_UPDATE_INTERVAL_UNIT
+
+    return interval_value, interval_unit
+
+
+def update_email_update_interval(user_id: str, value, unit) -> dict:
+    interval_value, interval_unit = normalize_email_update_interval(value, unit)
+
+    response = get_users_table().update_item(
+        Key={"userId": user_id},
+        UpdateExpression=(
+            "SET emailUpdateIntervalValue = :value, "
+            "emailUpdateIntervalUnit = :unit, "
+            "emailUpdateIntervalUpdatedAt = :updatedAt"
+        ),
+        ExpressionAttributeValues={
+            ":value": interval_value,
+            ":unit": interval_unit,
+            ":updatedAt": now_iso(),
+        },
+        ReturnValues="ALL_NEW",
+    )
+
+    attrs = response.get("Attributes", {})
+    return {
+        "emailUpdateIntervalValue": attrs.get("emailUpdateIntervalValue", interval_value),
+        "emailUpdateIntervalUnit": attrs.get("emailUpdateIntervalUnit", interval_unit),
+        "emailUpdateIntervalUpdatedAt": attrs.get("emailUpdateIntervalUpdatedAt"),
+    }
+
+
+def update_coach_summary_sent_at(user_id: str, sent_at: str) -> None:
+    get_users_table().update_item(
+        Key={"userId": user_id},
+        UpdateExpression="SET lastCoachSummarySentAt = :sentAt",
+        ExpressionAttributeValues={":sentAt": sent_at},
+    )
