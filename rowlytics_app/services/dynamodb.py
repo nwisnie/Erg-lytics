@@ -819,3 +819,4 @@ def update_coach_summary_sent_at(user_id: str, sent_at: str) -> None:
         UpdateExpression="SET lastCoachSummarySentAt = :sentAt",
         ExpressionAttributeValues={":sentAt": sent_at},
     )
+    

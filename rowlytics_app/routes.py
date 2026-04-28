@@ -187,10 +187,7 @@ def settings() -> str:
 
     is_coach = False
     if user_id:
-        from rowlytics_app.services.dynamodb import (
-            get_team_members_table,
-            list_team_memberships,
-        )
+        from rowlytics_app.services.dynamodb import get_team_members_table, list_team_memberships
 
         memberships = list_team_memberships(get_team_members_table(), user_id)
         is_coach = any(
