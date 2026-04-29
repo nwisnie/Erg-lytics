@@ -42,6 +42,7 @@ from rowlytics_app.services.dynamodb import (
     resolve_user_by_identifier,
     sum_recording_durations_for_utc_date,
     team_name_exists,
+    update_email_update_interval,
 )
 from rowlytics_app.services.s3 import UPLOAD_BUCKET_NAME, get_s3_client
 
@@ -1793,6 +1794,34 @@ def update_account_name():
     return jsonify({"status": "ok", "name": name})
 
 
+@api_bp.route("/account/email-updates", methods=["POST"])
+def update_account_email_updates():
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "authentication required"}), 401
+
+    data = request.get_json(silent=True) or {}
+    interval_value = data.get("value")
+    interval_unit = data.get("unit")
+
+    try:
+        saved_interval = update_email_update_interval(
+            user_id,
+            interval_value,
+            interval_unit,
+        )
+    except Exception as err:
+        return jsonify({
+            "error": "Unable to update email settings",
+            "detail": str(err),
+        }), 500
+
+    return jsonify({
+        "status": "ok",
+        **saved_interval,
+    })
+
+
 @api_bp.route("/account/profile", methods=["GET"])
 def get_account_profile():
     user_id = session.get("user_id")
@@ -1816,6 +1845,7 @@ def get_account_profile():
         "userId": user_id,
         "name": current_name,
         "email": current_email,
+        "emailUpdateFrequency": profile.get("emailUpdateFrequency", "weekly"),
     })
 
 

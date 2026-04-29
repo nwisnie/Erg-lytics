@@ -9,7 +9,10 @@
   const apiBase = (document.body?.dataset?.apiBase || "").replace(/\/+$/, "");
   const updateNameUrl = document.body?.dataset?.accountNameUrl || "";
   const deleteAccountUrl = document.body?.dataset?.accountDeleteUrl || "";
-  const homeUrl = document.body?.dataset?.homeUrl || "/";
+  const emailUpdatesUrl = document.body?.dataset?.accountEmailUpdatesUrl || "";
+  const emailUpdatesForm = document.getElementById("emailUpdatesForm");
+  const emailUpdateIntervalValue = document.getElementById("emailUpdateIntervalValue");
+  const emailUpdateIntervalUnit = document.getElementById("emailUpdateIntervalUnit");  const homeUrl = document.body?.dataset?.homeUrl || "/";
   const signinUrl = document.body?.dataset?.signinUrl || "/signin";
   const requireDisplayName = document.body?.dataset?.requireDisplayName === "true";
 
@@ -67,6 +70,41 @@
       setMessage(err.message || "Unable to update name", "error");
     }
   });
+
+  if (emailUpdatesForm && emailUpdateIntervalValue && emailUpdateIntervalUnit) {
+    emailUpdatesForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      setMessage("Saving email settings...", "info");
+
+      try {
+        const response = await fetch(
+          emailUpdatesUrl || getApiUrl("/api/account/email-updates"),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              value: emailUpdateIntervalValue.value,
+              unit: emailUpdateIntervalUnit.value
+            })
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || data.error || "Unable to update email settings");
+        }
+
+        emailUpdateIntervalValue.value = data.emailUpdateIntervalValue;
+        emailUpdateIntervalUnit.value = data.emailUpdateIntervalUnit;
+
+        setMessage("Email settings updated.", "success");
+      } catch (err) {
+        setMessage(err.message || "Unable to update email settings", "error");
+      }
+    });
+  }
 
   if (deleteBtn && confirmWrap && confirmBtn && cancelBtn) {
     deleteBtn.addEventListener("click", () => {

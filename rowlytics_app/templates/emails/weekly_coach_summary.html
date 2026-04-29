@@ -23,16 +23,41 @@
 
     <hr>
 
-    <p><strong>Current placeholder weekly metrics:</strong></p>
+    <p><strong>This week's team statistics:</strong></p>
+
     <ul>
       <li><strong>Workouts completed:</strong> {{ summary.workouts_completed }}</li>
-      <li><strong>Average split:</strong> {{ summary.avg_split }}</li>
-      <li><strong>Average stroke rate:</strong> {{ summary.avg_rate }}</li>
+
+      <li>
+        <strong>Consistency:</strong>
+        {% if summary.average_consistency_score is not none %}
+          {{ summary.average_consistency_score }}%
+        {% else %}
+          No scored workouts yet
+        {% endif %}
+      </li>
+
+      <li>
+        <strong>Arms:</strong>
+        {% if summary.average_arms_score is not none %}
+          {{ summary.average_arms_score }}%
+        {% else %}
+          No scored workouts yet
+        {% endif %}
+      </li>
+
+      <li>
+        <strong>Back:</strong>
+        {% if summary.average_back_score is not none %}
+          {{ summary.average_back_score }}%
+        {% else %}
+          No scored workouts yet
+        {% endif %}
+      </li>
     </ul>
 
     <p>
-      These performance values are still mock data for now, but the team and
-      roster information above is loaded dynamically.
+      These values are based on workouts completed in the last 7 days.
     </p>
   </body>
 </html>
