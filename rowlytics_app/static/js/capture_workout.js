@@ -112,10 +112,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 8000;
-const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 75;
-const backStraightThreshold = 75;
+const formBadDurationMs = 3000;
+const formPromptCooldownMs = 3000;
+const armsStraightThreshold = 90;
+const backStraightThreshold = 90;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
@@ -761,7 +761,7 @@ function handleFormAudio(frameTime, analysisPayload) {
   const armsScore = analysisPayload.armsStraightScore;
   const backScore = analysisPayload.backStraightScore;
 
-  // console.log("live form scores", { armsScore, backScore });
+  console.log("live form scores", { armsScore, backScore });
 
   if (armsScore != null && armsScore < armsStraightThreshold) {
     if (badArmsStartMs === null) {
