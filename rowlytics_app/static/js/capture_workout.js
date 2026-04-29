@@ -125,10 +125,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 8000;
+const formBadDurationMs = 3500;
 const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 75;
-const backStraightThreshold = 75;
+const armsStraightThreshold = 90;
+const backStraightThreshold = 90;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
@@ -1271,7 +1271,7 @@ function handleFormAudio(frameTime, analysisPayload) {
   const armsScore = analysisPayload.armsStraightScore;
   const backScore = analysisPayload.backStraightScore;
 
-  // console.log("live form scores", { armsScore, backScore });
+  console.log("live form scores", { armsScore, backScore });
 
   if (armsScore != null && armsScore < armsStraightThreshold) {
     if (badArmsStartMs === null) {
@@ -2071,6 +2071,11 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
+    console.log("SAVING WORKOUT", {
+      latestWorkoutAnalysis,
+      latestWorkoutScore,
+      latestWorkoutAnalysisText
+    });
     saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId, latestWorkoutAnalysis, latestWorkoutAnalysisText, latestWorkoutScore);
   }
   workoutStartAt = null;

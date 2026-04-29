@@ -552,13 +552,13 @@ def _consistency_score(mean_spread, *, shape_aware=False):
     if mean_spread is None:
         return None
     if shape_aware:
-        adjusted_spread = max(0.0, mean_spread - 0.03)
-        falloff_scale = 0.04
-        falloff_power = 1.8
+        adjusted_spread = max(0.0, mean_spread - 0.04)
+        falloff_scale = 0.12
+        falloff_power = 1.2
     else:
-        adjusted_spread = max(0.0, mean_spread - 0.01)
-        falloff_scale = 0.03
-        falloff_power = 1.5
+        adjusted_spread = max(0.0, mean_spread - 0.02)
+        falloff_scale = 0.10
+        falloff_power = 1.2
 
     if adjusted_spread <= 1e-9:
         return 100.0
@@ -999,42 +999,35 @@ def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression
             "score": straightness_score,
             "reach": reach_norm,
         })
+    straightness_scores = [frame["score"] for frame in candidate_frames]
 
-    if len(candidate_frames) < ARMS_STRAIGHT_MIN_POINTS:
+    if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
         return None
 
-    drive_phase_scores = [
-        frame["score"]
-        for frame in candidate_frames
-        if frame["progression"] is not None
-        and frame["progression"] <= ARMS_DRIVE_MAX_PROGRESSION_STEP
-    ]
-    if len(drive_phase_scores) >= ARMS_STRAIGHT_MIN_POINTS:
-        straightness_scores = drive_phase_scores
-    else:
-        reach_values = [
-            frame["reach"]
-            for frame in candidate_frames
-            if frame["reach"] is not None
-        ]
-        if len(reach_values) >= ARMS_STRAIGHT_MIN_POINTS:
-            drive_reach_threshold = _percentile(reach_values, ARMS_DRIVE_REACH_PERCENTILE)
-            straightness_scores = [
-                frame["score"]
-                for frame in candidate_frames
-                if frame["reach"] is not None and frame["reach"] >= drive_reach_threshold
-            ]
-            if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
-                straightness_scores = [frame["score"] for frame in candidate_frames]
-        else:
-            straightness_scores = [frame["score"] for frame in candidate_frames]
+    p25 = _percentile(straightness_scores, 25)
+    p50 = _percentile(straightness_scores, 50)
+    p75 = _percentile(straightness_scores, 75)
+    average = sum(straightness_scores) / len(straightness_scores)
 
-    percentile_score = _percentile(straightness_scores, ARMS_STRAIGHT_SCORE_PERCENTILE)
-    if percentile_score is None:
+    if p25 is None or p50 is None or p75 is None:
         return _finalize_form_score(straightness_scores)
-    average_score = sum(straightness_scores) / len(straightness_scores)
-    blended_scores = [percentile_score, average_score, *straightness_scores]
-    return _finalize_form_score(blended_scores)
+
+    low_score_ratio = len([
+        score for score in straightness_scores
+        if score < 60
+    ]) / len(straightness_scores)
+
+    score = (
+        0.25 * p75 +
+        0.35 * p50 +
+        0.25 * p25 +
+        0.15 * average
+    )
+
+    # punish workouts that spend a lot of time with bent arms
+    score -= low_score_ratio * 18
+
+    return round(max(0.0, min(100.0, score)), 2)
 
 
 def _score_back_straightness(side_coordinates, dominant_side, anchor_progression=None):
