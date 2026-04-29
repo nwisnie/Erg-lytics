@@ -76,10 +76,6 @@ This document lists the AWS-related environment variables used by Rowlytics, the
   - Used by: `rowlytics_app/routes.py`, `rowlytics_app/services/weekly_coach_summary.py`
   - Note: Verified recipient email address used for SES sandbox testing. Used by the `/test-email` development endpoint and as a fallback recipient for weekly coach summary emails if no valid coach email is found for the selected team.
 
-- `WEEKLY_SUMMARY_TEST_TEAM_ID`
-  - Default: empty string
-  - Used by: `rowlytics_app/services/weekly_coach_summary.py`
-  - Note: emporary development variable used for automated weekly coach summary emails. Specifies which team’s data should be loaded for testing the scheduled summary email workflow. The service uses this `teamId` to: fetch the real team name, fetch current team members, identify coach users for that team, send teh weekly summary email to the coach email(s).
 
 ## Misc
 

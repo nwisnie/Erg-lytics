@@ -182,9 +182,25 @@ def help_page() -> str:
 
 @public_bp.route("/settings")
 def settings() -> str:
+    user_id = session.get("user_id")
+    profile = fetch_user_profile(user_id)
+
+    is_coach = False
+    if user_id:
+        from rowlytics_app.services.dynamodb import get_team_members_table, list_team_memberships
+
+        memberships = list_team_memberships(get_team_members_table(), user_id)
+        is_coach = any(
+            (membership.get("memberRole") or "").lower() == "coach"
+            for membership in memberships
+        )
+
     return render_template(
         "settings.html",
         display_name_required=request.args.get("require_display_name") == "1",
+        is_coach=is_coach,
+        email_update_interval_value=profile.get("emailUpdateIntervalValue", 1),
+        email_update_interval_unit=profile.get("emailUpdateIntervalUnit", "weeks"),
         **user_context(),
     )
 
