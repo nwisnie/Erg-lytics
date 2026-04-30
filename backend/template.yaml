@@ -478,7 +478,7 @@ Resources:
         WeeklyCoachSummarySchedule:
           Type: Schedule
           Properties:
-            Schedule: rate(7 days)
+            Schedule: rate(5 days)
             Enabled: true
             Input: '{ "scheduled_task": "weekly_coach_summary" }'
 
