@@ -873,7 +873,7 @@ def _compute_consistency_metrics(
     combined_spread = None
     if spatial_spread is not None:
         if shape_spread is not None:
-            combined_spread = spatial_spread + (timing_penalty * 0.20) + (amplitude_penalty * 0.20)
+            combined_spread = spatial_spread + (timing_penalty * 1.0) + (amplitude_penalty * 1.0)
         else:
             combined_spread = (spatial_spread * 3.0) + timing_penalty + amplitude_penalty
 
@@ -918,6 +918,37 @@ def _finalize_form_score(scores):
     stability_penalty = min(22.0, (variance ** 0.5) * 0.28)
     weighted_score = (average_score * 0.35) + (floor_score * 0.65)
     return round(max(0.0, weighted_score - stability_penalty), 2)
+
+
+def _combine_analysis_score(
+    consistency_score,
+    arms_score=None,
+    back_score=None,
+    timing_penalty=0.0,
+    amplitude_penalty=0.0,
+):
+    if consistency_score is None:
+        return None
+
+    combined_score = consistency_score
+
+    # Convert normalized consistency penalties into score-point deductions.
+    timing_deduction = max(0.0, timing_penalty or 0.0) * 250.0
+    amplitude_deduction = max(0.0, amplitude_penalty or 0.0) * 150.0
+    combined_score -= timing_deduction + amplitude_deduction
+
+    # If consistency is excellent, avoid synthetic arm/back geometry tanking it.
+    # But timing/amplitude penalties still count.
+    if consistency_score >= 90.0:
+        return round(max(0.0, min(100.0, combined_score)), 2)
+
+    if arms_score is not None and arms_score < 75.0:
+        combined_score -= (75.0 - arms_score) * 0.8
+
+    if back_score is not None and back_score < 75.0:
+        combined_score -= (75.0 - back_score) * 0.8
+
+    return round(max(0.0, min(100.0, combined_score)), 2)
 
 
 def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
@@ -969,6 +1000,11 @@ def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression
         if not shoulder or not elbow or not wrist:
             continue
 
+        progression_step = _estimate_progression_step(anchor_progression, timestamp)
+
+        if progression_step is not None and progression_step >= ARMS_DRIVE_MAX_PROGRESSION_STEP:
+            continue
+
         angle_value = _compute_elbow_angle_normalized(shoulder, elbow, wrist)
         if angle_value is None:
             continue
@@ -996,7 +1032,7 @@ def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression
                 torso_length,
             )
         candidate_frames.append({
-            "progression": _estimate_progression_step(anchor_progression, timestamp),
+            "progression": progression_step,
             "score": straightness_score,
             "reach": reach_norm,
         })
@@ -1005,9 +1041,9 @@ def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression
     if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
         return None
 
-    p25 = _percentile(straightness_scores, 25)
-    p50 = _percentile(straightness_scores, 50)
-    p75 = _percentile(straightness_scores, 75)
+    p25 = _percentile(straightness_scores, 0.25)
+    p50 = _percentile(straightness_scores, 0.50)
+    p75 = _percentile(straightness_scores, 0.75)
     average = sum(straightness_scores) / len(straightness_scores)
 
     if p25 is None or p50 is None or p75 is None:
@@ -1070,6 +1106,7 @@ def _score_back_straightness(side_coordinates, dominant_side, anchor_progression
             )
             if back_angle_score is None:
                 continue
+
             if not include_head_position:
                 scores.append(back_angle_score)
                 continue
@@ -1088,7 +1125,9 @@ def _score_back_straightness(side_coordinates, dominant_side, anchor_progression
             )
             if head_position_score is None:
                 continue
+
             scores.append(math.sqrt(back_angle_score * head_position_score))
+
         return scores
 
     straightness_scores = _collect_scores(ear_name, include_head_position=True)
@@ -1101,6 +1140,7 @@ def _score_back_straightness(side_coordinates, dominant_side, anchor_progression
     percentile_score = _percentile(straightness_scores, BACK_STRAIGHT_SCORE_PERCENTILE)
     if percentile_score is None:
         return _finalize_form_score(straightness_scores)
+
     average_score = sum(straightness_scores) / len(straightness_scores)
     blended_scores = [percentile_score, average_score, *straightness_scores]
     return _finalize_form_score(blended_scores)
@@ -1532,6 +1572,13 @@ def _analyze_landmark_frames(
         dominant_side,
         anchor_progression,
     )
+    final_score = _combine_analysis_score(
+        score,
+        arms_straight_score,
+        back_straight_score,
+        timing_penalty=consistency_metrics["timingPenalty"],
+        amplitude_penalty=consistency_metrics["amplitudePenalty"],
+    )
 
     return {
         "anchorLandmark": anchor_name,
@@ -1550,8 +1597,8 @@ def _analyze_landmark_frames(
         if consistency_metrics["shapeSpread"] is not None else None,
         "timingPenalty": round(consistency_metrics["timingPenalty"], 6),
         "amplitudePenalty": round(consistency_metrics["amplitudePenalty"], 6),
-        "score": score,
-        "summary": _summarize_alignment(score),
+        "score": final_score,
+        "summary": _summarize_alignment(final_score),
         "matchedPoints": consistency_metrics["matchedPoints"],
     }
 
