@@ -92,4 +92,4 @@ These values *should* already be configred in 'samconfig.toml'.
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request to `main`. A push will fail unless all quality gates are passed.
 
 ## Version
-Version Number: 0.6.2
+Version Number: 1.0.0

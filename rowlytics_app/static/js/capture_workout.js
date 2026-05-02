@@ -31,6 +31,17 @@ const MP_MODEL_FILES = Object.freeze({
   heavy: "pose_landmarker_heavy.task",
 });
 const requestedPoseModel = (urlParams?.get("poseModel") || "lite").toLowerCase();
+function readDebugFlag(paramName, storageKey) {
+  try {
+    const fromQuery = urlParams?.get(paramName);
+    if (fromQuery === "1" || fromQuery === "true") return true;
+    if (fromQuery === "0" || fromQuery === "false") return false;
+    return window.localStorage?.getItem(storageKey) === "1";
+  } catch (err) {
+    return false;
+  }
+}
+
 const buildPoseModelCandidates = (requestedModel) => {
   const candidateKeys = [];
   if (Object.prototype.hasOwnProperty.call(MP_MODEL_FILES, requestedModel)) {
@@ -48,7 +59,7 @@ const statusHiddenClass = "pose-status--hidden";
 const defaultStatusText = "Side profile not in frame";
 const readyStatusText = "Side profile in frame";
 const userId = document.body?.dataset?.userId || "demo-user";
-const recordingDurationMs = 7000;
+const recordingDurationMs = 5000;
 const maxWorkoutDurationMs = 60 * 60 * 1000;
 const maxWorkoutDurationSec = maxWorkoutDurationMs / 1000;
 const maxRecordingClipsPerWorkout = 3;
@@ -57,6 +68,7 @@ const recordingCooldownMs = 3000;
 const inFrameDropoutGraceMs = 600;
 const movementGateRetryMs = 1200;
 const movementDebugLogIntervalMs = 500;
+const activeSegmentMinFrames = 6;
 const workoutSummaryText = "Workout session";
 const workoutDurationLimitText = (
   "Workouts automatically stop after 1 hour. Recording uploads are capped at 2 hours per day."
@@ -99,6 +111,7 @@ let lastMovementDebugLogAtMs = 0;
 let latestWorkoutAnalysis = null;
 let latestWorkoutAnalysisText = "";
 let latestWorkoutScore = null;
+let workoutAnalysisAggregate = null;
 
 let bodyInFramePromptPlayed = false;
 let readyToBeginPromptPlayed = false;
@@ -112,10 +125,10 @@ let lastNoAthletePromptAtMs = 0;
 
 const noAthleteDelayMs = 5000;
 const noAthleteRepeatMs = 20000;
-const formBadDurationMs = 8000;
+const formBadDurationMs = 3500;
 const formPromptCooldownMs = 5000;
-const armsStraightThreshold = 75;
-const backStraightThreshold = 75;
+const armsStraightThreshold = 90;
+const backStraightThreshold = 90;
 
 const STATIC_ASSET_BASE = "https://rowlytics-static-assets.s3.us-east-2.amazonaws.com";
 
@@ -209,15 +222,196 @@ const motionSpikeMaxDeltaPerSec = 1.2;
 const motionSpikeBaseDelta = 0.075;
 const motionSignalVisibilityFloor = 0.12;
 const motionComparisonLandmarkIndices = [11, 12, 13, 14, 15, 16];
-const captureDebugEnabled = (() => {
+const captureDebugEnabled = readDebugFlag("captureDebug", "rowlytics_capture_debug");
+const captureExportEnabled = captureDebugEnabled &&
+  readDebugFlag("captureExport", "rowlytics_capture_export");
+const captureDebugExportVersion = "20260427a";
+
+let latestClipDebugSnapshot = null;
+let workoutClipDebugSnapshots = [];
+let debugExportControls = null;
+
+function cloneJsonCompatible(value) {
+  if (value == null) return value;
   try {
-    const fromQuery = urlParams?.get("captureDebug");
-    if (fromQuery === "1" || fromQuery === "true") return true;
-    return window.localStorage?.getItem("rowlytics_capture_debug") === "1";
+    return JSON.parse(JSON.stringify(value));
   } catch (err) {
-    return false;
+    return value;
   }
-})();
+}
+
+function safeFilenameSegment(value, fallback = "unknown") {
+  const normalized = String(value ?? fallback)
+    .trim()
+    .replace(/[^a-z0-9_-]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function buildDebugExportFilename(scope, snapshot = null) {
+  const clipLabel = snapshot?.clipIndex != null
+    ? `clip-${safeFilenameSegment(snapshot.clipIndex, "0")}`
+    : scope;
+  const createdAtLabel = safeFilenameSegment(snapshot?.createdAt || new Date().toISOString(), "capture");
+  return `rowlytics-${scope}-${clipLabel}-${createdAtLabel}.json`;
+}
+
+function downloadJsonFile(filename, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function buildClipDebugSnapshot({
+  createdAt,
+  clipIndex,
+  recordedFrames,
+  gateFrames,
+  scoringFrames,
+  scoringFrameSource,
+  scoringDurationSec,
+  gateMovement,
+  localMovement,
+  mergedMovement,
+  analysisPayload,
+  persistedPayload,
+  aggregatePayload,
+}) {
+  return {
+    exportedAt: new Date().toISOString(),
+    exportVersion: captureDebugExportVersion,
+    workoutId,
+    clipIndex,
+    createdAt,
+    recordingDurationSec: recordingDurationMs / 1000,
+    preferredFacingMode,
+    requestedPoseModel,
+    captureDebugEnabled,
+    captureExportEnabled,
+    landmarksFrameCount: Array.isArray(recordedFrames) ? recordedFrames.length : 0,
+    recordedLandmarkFrames: cloneJsonCompatible(recordedFrames),
+    gateFramesFrameCount: Array.isArray(gateFrames) ? gateFrames.length : 0,
+    gateFrames: cloneJsonCompatible(gateFrames),
+    scoringFramesFrameCount: Array.isArray(scoringFrames) ? scoringFrames.length : 0,
+    scoringFrameSource,
+    scoringDurationSec,
+    gateMovement: cloneJsonCompatible(gateMovement),
+    localMovement: cloneJsonCompatible(localMovement),
+    mergedMovement: cloneJsonCompatible(mergedMovement),
+    analysisPayload: cloneJsonCompatible(analysisPayload),
+    persistedPayload: cloneJsonCompatible(persistedPayload),
+    aggregatePayload: cloneJsonCompatible(aggregatePayload),
+    alignmentDetailsText: aggregatePayload ? formatAlignmentOutput(aggregatePayload) : "",
+  };
+}
+
+function updateDebugExportControlsState() {
+  if (!debugExportControls) return;
+  const { exportLastBtn, exportAllBtn, summary } = debugExportControls;
+  const clipCount = workoutClipDebugSnapshots.length;
+  if (exportLastBtn) {
+    exportLastBtn.disabled = !latestClipDebugSnapshot;
+  }
+  if (exportAllBtn) {
+    exportAllBtn.disabled = clipCount === 0;
+  }
+  if (summary) {
+    summary.textContent = clipCount
+      ? `Debug export ready: ${clipCount} clip${clipCount === 1 ? "" : "s"} captured.`
+      : "Debug export ready: no saved clips yet.";
+  }
+}
+
+function exportLastClipDebugSnapshot() {
+  if (!latestClipDebugSnapshot) return;
+  downloadJsonFile(
+    buildDebugExportFilename("capture-debug", latestClipDebugSnapshot),
+    latestClipDebugSnapshot,
+  );
+}
+
+function exportAllClipDebugSnapshots() {
+  if (!workoutClipDebugSnapshots.length) return;
+  downloadJsonFile(
+    buildDebugExportFilename("capture-debug-all"),
+    {
+      exportedAt: new Date().toISOString(),
+      exportVersion: captureDebugExportVersion,
+      workoutId,
+      clipCount: workoutClipDebugSnapshots.length,
+      clips: cloneJsonCompatible(workoutClipDebugSnapshots),
+      latestWorkoutAnalysis: cloneJsonCompatible(latestWorkoutAnalysis),
+      latestWorkoutAnalysisText,
+      latestWorkoutScore,
+    },
+  );
+}
+
+function rememberClipDebugSnapshot(snapshot) {
+  if (!captureDebugEnabled || !snapshot) return;
+  latestClipDebugSnapshot = snapshot;
+  workoutClipDebugSnapshots.push(snapshot);
+  debugCapture("clip_debug_snapshot_saved", {
+    clipIndex: snapshot.clipIndex,
+    clipCount: workoutClipDebugSnapshots.length
+  });
+  updateDebugExportControlsState();
+  if (captureExportEnabled) {
+    downloadJsonFile(
+      buildDebugExportFilename("capture-debug", snapshot),
+      snapshot,
+    );
+  }
+}
+
+function resetClipDebugSnapshots() {
+  latestClipDebugSnapshot = null;
+  workoutClipDebugSnapshots = [];
+  updateDebugExportControlsState();
+}
+
+function ensureDebugExportControls() {
+  if (!captureDebugEnabled || debugExportControls || !captureSessionNotice?.parentElement) {
+    return;
+  }
+
+  const controlsWrap = document.createElement("div");
+  controlsWrap.className = "capture__controls";
+
+  const exportLastBtn = document.createElement("button");
+  exportLastBtn.type = "button";
+  exportLastBtn.className = "btn btn--subtle";
+  exportLastBtn.textContent = "Export Last Clip JSON";
+  exportLastBtn.addEventListener("click", exportLastClipDebugSnapshot);
+
+  const exportAllBtn = document.createElement("button");
+  exportAllBtn.type = "button";
+  exportAllBtn.className = "btn btn--subtle";
+  exportAllBtn.textContent = "Export All Clip JSON";
+  exportAllBtn.addEventListener("click", exportAllClipDebugSnapshots);
+
+  controlsWrap.append(exportLastBtn, exportAllBtn);
+
+  const summary = document.createElement("p");
+  summary.className = "capture__note";
+
+  captureSessionNotice.parentElement.append(controlsWrap, summary);
+  debugExportControls = {
+    exportLastBtn,
+    exportAllBtn,
+    summary,
+  };
+  updateDebugExportControlsState();
+}
 
 function debugCapture(event, details = {}) {
   if (!captureDebugEnabled) return;
@@ -262,6 +456,11 @@ function setupCameraSwitchControl() {
     return;
   }
   switchCameraBtn.classList.add("capture__switch--hidden");
+}
+
+function resetMovementHistory() {
+  workoutMovementFrames = [];
+  workoutMovementFrameTimesMs = [];
 }
 
 function appendMovementFrame(frame, frameTimeMs) {
@@ -351,6 +550,109 @@ function usableLandmark(frame, index, visibilityFloor = 0.2) {
   const visibility = landmark.visibility == null ? 1 : asNumber(landmark.visibility);
   if (visibility != null && visibility < visibilityFloor) return null;
   return landmark;
+}
+
+function frameHasSideProfileChain(frame, preferredSide = null) {
+  const margin = 0.06;
+  const sideEntries = preferredSide === "left"
+    ? [["left", SIDE_PROFILE_LEFT]]
+    : preferredSide === "right"
+      ? [["right", SIDE_PROFILE_RIGHT]]
+      : [
+        ["left", SIDE_PROFILE_LEFT],
+        ["right", SIDE_PROFILE_RIGHT]
+      ];
+
+  return sideEntries.some(([, indices]) => {
+    const visibleCount = indices.reduce((count, index) => {
+      const landmark = usableLandmark(frame, index, sideProfileVisibilityThreshold);
+      if (!landmark) return count;
+      if (
+        landmark.x >= margin &&
+        landmark.x <= 1 - margin &&
+        landmark.y >= margin &&
+        landmark.y <= 1 - margin
+      ) {
+        return count + 1;
+      }
+      return count;
+    }, 0);
+    const shoulder = usableLandmark(frame, indices[0], sideProfileVisibilityThreshold);
+    const hip = usableLandmark(frame, indices[3], sideProfileVisibilityThreshold);
+    const shoulderInBounds = shoulder &&
+      shoulder.x >= margin &&
+      shoulder.x <= 1 - margin &&
+      shoulder.y >= margin &&
+      shoulder.y <= 1 - margin;
+    const hipInBounds = hip &&
+      hip.x >= margin &&
+      hip.x <= 1 - margin &&
+      hip.y >= margin &&
+      hip.y <= 1 - margin;
+    return Boolean(shoulderInBounds && hipInBounds && visibleCount >= sideProfileMinVisiblePoints);
+  });
+}
+
+function trimFramesToActiveSegment(frames, clipDurationSec, preferredSide = null) {
+  if (!Array.isArray(frames) || frames.length < 2) {
+    return {
+      frames: Array.isArray(frames) ? frames : [],
+      durationSec: Number(clipDurationSec || 0),
+    };
+  }
+
+  let bestStart = null;
+  let bestEnd = null;
+  let currentStart = null;
+
+  frames.forEach((frame, index) => {
+    const valid = frameHasSideProfileChain(frame, preferredSide);
+    if (valid && currentStart === null) {
+      currentStart = index;
+      return;
+    }
+    if (valid) {
+      return;
+    }
+    if (currentStart === null) {
+      return;
+    }
+    const currentEnd = index - 1;
+    if (
+      bestStart === null ||
+      (currentEnd - currentStart) > (bestEnd - bestStart)
+    ) {
+      bestStart = currentStart;
+      bestEnd = currentEnd;
+    }
+    currentStart = null;
+  });
+
+  if (currentStart !== null) {
+    const currentEnd = frames.length - 1;
+    if (
+      bestStart === null ||
+      (currentEnd - currentStart) > (bestEnd - bestStart)
+    ) {
+      bestStart = currentStart;
+      bestEnd = currentEnd;
+    }
+  }
+
+  if (bestStart === null || bestEnd === null) {
+    return { frames, durationSec: clipDurationSec };
+  }
+
+  const trimmedFrames = frames.slice(bestStart, bestEnd + 1);
+  if (trimmedFrames.length < activeSegmentMinFrames) {
+    return { frames, durationSec: clipDurationSec };
+  }
+
+  const frameIntervalSec = clipDurationSec / Math.max(frames.length - 1, 1);
+  return {
+    frames: trimmedFrames,
+    durationSec: Number((frameIntervalSec * Math.max(trimmedFrames.length - 1, 1)).toFixed(6)),
+  };
 }
 
 function detectDominantSideFromFrames(frames) {
@@ -738,17 +1040,225 @@ function formatAlignmentOutput(payload) {
     `summary: ${payload.summary || "No summary"}`,
     `anchor landmark: ${payload.anchorLandmark || "n/a"}`,
     `progression step: ${progression}`,
-    `mean distance: ${meanDistance}`,
-    `matched points: ${matchedPoints}`,
+    `consistency spread: ${meanDistance}`,
+    `repeat samples: ${matchedPoints}`,
     `frames analyzed: ${frameCount}`,
     `coordinates used: ${coordinateCount}`
   ].join("\n");
 }
 
+function createWorkoutAnalysisAggregate() {
+  return {
+    clipCount: 0,
+    movementQualifiedCount: 0,
+    movementFailedCount: 0,
+    strokeCount: 0,
+    cadenceTotal: 0,
+    cadenceCount: 0,
+    rangeTotal: 0,
+    rangeCount: 0,
+    scoreTotal: 0,
+    scoreCount: 0,
+    armsTotal: 0,
+    armsCount: 0,
+    backTotal: 0,
+    backCount: 0,
+    dominantSideCounts: {
+      left: 0,
+      right: 0,
+    },
+    latestMovementQualified: null,
+    latestMovementReason: null,
+    latestSignalStrategy: "n/a",
+    latestSignalSource: "n/a",
+    latestAnalysisWindowSec: null,
+    latestFrameCount: 0,
+    latestCoordinateCount: 0,
+    latestProgressionStep: null,
+    latestMeanDistance: null,
+    latestMatchedPoints: 0,
+    latestAnchorLandmark: null,
+  };
+}
+
+function summarizeConsistencyScore(score) {
+  if (score == null) {
+    return "Not enough valid strokes were detected to calculate a score.";
+  }
+  if (score >= 85) {
+    return "Great stroke-to-stroke consistency for this workout.";
+  }
+  if (score >= 65) {
+    return "Solid repeatability, but there is room to tighten it further.";
+  }
+  if (score >= 40) {
+    return "Moderate drift detected. Focus on more repeatable body positions.";
+  }
+  return "Large drift detected. Recheck posture and frame setup.";
+}
+
+function sanitizeWorkoutAnalysisForPersistence(payload) {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  if (payload.movementQualified === false) {
+    return {
+      ...payload,
+      summary: "Not enough valid strokes were detected to calculate a score.",
+      score: null,
+      armsStraightScore: null,
+      backStraightScore: null,
+    };
+  }
+
+  return payload;
+}
+
+function resetWorkoutAnalysisAggregate() {
+  workoutAnalysisAggregate = createWorkoutAnalysisAggregate();
+}
+
+function averageAggregateMetric(total, count) {
+  if (!count) return null;
+  return Number((total / count).toFixed(2));
+}
+
+function dominantSideFromAggregate(counts) {
+  const left = counts?.left || 0;
+  const right = counts?.right || 0;
+  if (!left && !right) return null;
+  return left >= right ? "left" : "right";
+}
+
+function updateWorkoutAnalysisAggregate(payload) {
+  if (!workoutAnalysisAggregate) {
+    resetWorkoutAnalysisAggregate();
+  }
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  workoutAnalysisAggregate.clipCount += 1;
+  if (payload.movementQualified === true) {
+    workoutAnalysisAggregate.movementQualifiedCount += 1;
+  } else if (payload.movementQualified === false) {
+    workoutAnalysisAggregate.movementFailedCount += 1;
+  }
+
+  const strokeCount = asNumber(payload.strokeCount);
+  if (strokeCount != null) {
+    workoutAnalysisAggregate.strokeCount += Math.max(0, Math.round(strokeCount));
+  }
+
+  const cadenceSpm = asNumber(payload.cadenceSpm);
+  if (cadenceSpm != null) {
+    workoutAnalysisAggregate.cadenceTotal += cadenceSpm;
+    workoutAnalysisAggregate.cadenceCount += 1;
+  }
+
+  const rangeOfMotion = asNumber(payload.rangeOfMotion);
+  if (rangeOfMotion != null) {
+    workoutAnalysisAggregate.rangeTotal += rangeOfMotion;
+    workoutAnalysisAggregate.rangeCount += 1;
+  }
+
+  const score = asNumber(payload.score);
+  if (score != null) {
+    workoutAnalysisAggregate.scoreTotal += score;
+    workoutAnalysisAggregate.scoreCount += 1;
+  }
+
+  const armsStraightScore = asNumber(payload.armsStraightScore);
+  if (armsStraightScore != null) {
+    workoutAnalysisAggregate.armsTotal += armsStraightScore;
+    workoutAnalysisAggregate.armsCount += 1;
+  }
+
+  const backStraightScore = asNumber(payload.backStraightScore);
+  if (backStraightScore != null) {
+    workoutAnalysisAggregate.backTotal += backStraightScore;
+    workoutAnalysisAggregate.backCount += 1;
+  }
+
+  if (payload.dominantSide === "left" || payload.dominantSide === "right") {
+    workoutAnalysisAggregate.dominantSideCounts[payload.dominantSide] += 1;
+  }
+
+  workoutAnalysisAggregate.latestMovementQualified = payload.movementQualified ?? null;
+  workoutAnalysisAggregate.latestMovementReason = payload.movementReason || null;
+  workoutAnalysisAggregate.latestSignalStrategy = payload.signalStrategy || "n/a";
+  workoutAnalysisAggregate.latestSignalSource = payload.signalSource || "n/a";
+  workoutAnalysisAggregate.latestAnalysisWindowSec = payload.analysisWindowSec ?? null;
+  workoutAnalysisAggregate.latestFrameCount = payload.frameCount ?? 0;
+  workoutAnalysisAggregate.latestCoordinateCount = payload.coordinateCount ?? 0;
+  workoutAnalysisAggregate.latestProgressionStep = payload.progressionStep ?? null;
+  workoutAnalysisAggregate.latestMeanDistance = payload.meanDistance ?? null;
+  workoutAnalysisAggregate.latestMatchedPoints = payload.matchedPoints ?? 0;
+  workoutAnalysisAggregate.latestAnchorLandmark = payload.anchorLandmark || null;
+
+  const aggregateScore = averageAggregateMetric(
+    workoutAnalysisAggregate.scoreTotal,
+    workoutAnalysisAggregate.scoreCount,
+  );
+  const aggregateMovementQualified = workoutAnalysisAggregate.scoreCount > 0
+    ? true
+    : (workoutAnalysisAggregate.movementQualifiedCount > 0
+      ? true
+      : (workoutAnalysisAggregate.movementFailedCount > 0 ? false : null));
+  const aggregateMovementReason = aggregateMovementQualified === true
+    ? `Movement gate passed on ${workoutAnalysisAggregate.scoreCount} of ${workoutAnalysisAggregate.clipCount} saved clips.`
+    : workoutAnalysisAggregate.latestMovementReason;
+
+  return {
+    ...payload,
+    clipCount: workoutAnalysisAggregate.clipCount,
+    strokeCount: workoutAnalysisAggregate.strokeCount,
+    cadenceSpm: averageAggregateMetric(
+      workoutAnalysisAggregate.cadenceTotal,
+      workoutAnalysisAggregate.cadenceCount,
+    ),
+    rangeOfMotion: averageAggregateMetric(
+      workoutAnalysisAggregate.rangeTotal,
+      workoutAnalysisAggregate.rangeCount,
+    ),
+    score: aggregateScore,
+    summary: summarizeConsistencyScore(aggregateScore),
+    armsStraightScore: averageAggregateMetric(
+      workoutAnalysisAggregate.armsTotal,
+      workoutAnalysisAggregate.armsCount,
+    ),
+    backStraightScore: averageAggregateMetric(
+      workoutAnalysisAggregate.backTotal,
+      workoutAnalysisAggregate.backCount,
+    ),
+    dominantSide: dominantSideFromAggregate(workoutAnalysisAggregate.dominantSideCounts),
+    movementQualified: aggregateMovementQualified,
+    movementReason: aggregateMovementReason,
+    signalStrategy: workoutAnalysisAggregate.latestSignalStrategy,
+    signalSource: workoutAnalysisAggregate.latestSignalSource,
+    analysisWindowSec: workoutAnalysisAggregate.latestAnalysisWindowSec,
+    frameCount: workoutAnalysisAggregate.latestFrameCount,
+    coordinateCount: workoutAnalysisAggregate.latestCoordinateCount,
+    progressionStep: workoutAnalysisAggregate.latestProgressionStep,
+    meanDistance: workoutAnalysisAggregate.latestMeanDistance,
+    matchedPoints: workoutAnalysisAggregate.latestMatchedPoints,
+    anchorLandmark: workoutAnalysisAggregate.latestAnchorLandmark,
+  };
+}
+
 function rememberWorkoutAnalysis(payload) {
-  latestWorkoutAnalysis = payload;
-  latestWorkoutAnalysisText = formatAlignmentOutput(payload);
-  latestWorkoutScore = payload && payload.score != null ? payload.score : null;
+  const persistedPayload = sanitizeWorkoutAnalysisForPersistence(payload);
+  const aggregatePayload = updateWorkoutAnalysisAggregate(persistedPayload);
+  latestWorkoutAnalysis = aggregatePayload;
+  latestWorkoutAnalysisText = aggregatePayload ? formatAlignmentOutput(aggregatePayload) : "";
+  latestWorkoutScore = aggregatePayload && aggregatePayload.score != null
+    ? aggregatePayload.score
+    : null;
+  return {
+    persistedPayload,
+    aggregatePayload,
+  };
 }
 
 function handleFormAudio(frameTime, analysisPayload) {
@@ -761,7 +1271,7 @@ function handleFormAudio(frameTime, analysisPayload) {
   const armsScore = analysisPayload.armsStraightScore;
   const backScore = analysisPayload.backStraightScore;
 
-  // console.log("live form scores", { armsScore, backScore });
+  console.log("live form scores", { armsScore, backScore });
 
   if (armsScore != null && armsScore < armsStraightThreshold) {
     if (badArmsStartMs === null) {
@@ -796,10 +1306,18 @@ function handleFormAudio(frameTime, analysisPayload) {
   }
 }
 
-async function analyzeLandmarkFrames(frames, createdAt, clipDurationSec, clipCount) {
+async function analyzeLandmarkFrames(frames, createdAt, clipDurationSec, clipCount, options = {}) {
   if (!apiBase || !Array.isArray(frames) || frames.length < 2) {
     throw new Error("Not enough landmark frames to analyze.");
   }
+
+  const dominantSideHint = options?.dominantSideHint === "left" || options?.dominantSideHint === "right"
+    ? options.dominantSideHint
+    : null;
+  const signalStrategyHint = options?.signalStrategyHint === "upper_body_translation" ||
+    options?.signalStrategyHint === "elbow_angle"
+    ? options.signalStrategyHint
+    : null;
 
   const response = await fetch(`${apiBase}/api/workouts/alignment-preview`, {
     method: "POST",
@@ -808,6 +1326,9 @@ async function analyzeLandmarkFrames(frames, createdAt, clipDurationSec, clipCou
       createdAt,
       clipDurationSec,
       clipCount,
+      allowPartialMotion: true,
+      dominantSideHint,
+      signalStrategyHint,
       frames,
     })
   });
@@ -994,29 +1515,7 @@ async function ensurePoseReady() {
 
 function fullBodyInFrame(landmarks) {
   if (!landmarks || landmarks.length === 0) return false;
-  const lms = landmarks[0];
-  const margin = 0.06;
-
-  const isVisibleInFrame = (lm) => {
-    if (!lm) return false;
-    const visibility = lm.visibility == null ? 1 : lm.visibility;
-    return visibility >= sideProfileVisibilityThreshold &&
-      lm.x >= margin &&
-      lm.x <= 1 - margin &&
-      lm.y >= margin &&
-      lm.y <= 1 - margin;
-  };
-
-  const sideChainReady = (indices) => {
-    const visibleCount = indices.reduce((count, index) => {
-      return count + (isVisibleInFrame(lms[index]) ? 1 : 0);
-    }, 0);
-    const hasShoulder = isVisibleInFrame(lms[indices[0]]);
-    const hasHip = isVisibleInFrame(lms[indices[3]]);
-    return hasShoulder && hasHip && visibleCount >= sideProfileMinVisiblePoints;
-  };
-
-  return sideChainReady(SIDE_PROFILE_LEFT) || sideChainReady(SIDE_PROFILE_RIGHT);
+  return frameHasSideProfileChain(recordLandmarks(landmarks));
 }
 
 function resetRecordingTimers() {
@@ -1136,7 +1635,7 @@ async function saveRecordingMetadata(metadata) {
 async function uploadRecording(blob, createdAt, analysisPayload) {
   const contentType = blob.type || "video/webm";
   const durationSec = recordingDurationMs / 1000;
-  
+
   if (analysisPayload?.score == null || analysisPayload.score > recordingScoreThreshold) {
     return false;
   }
@@ -1168,7 +1667,7 @@ async function uploadRecording(blob, createdAt, analysisPayload) {
   return true;
 }
 
-async function recordClip() {
+async function recordClip(gateMovement = null) {
   if (!stream || recordingInProgress || reachedWorkoutClipLimit()) return;
 
   const recorderOptions = getRecorderOptions();
@@ -1180,15 +1679,20 @@ async function recordClip() {
   const createdAt = new Date().toISOString();
   const chunks = [];
   recordedLandmarkFrames = [];
+  const gateFrames = Array.isArray(gateMovement?.gateFrames)
+    ? cloneJsonCompatible(gateMovement.gateFrames)
+    : [];
+  const gateDurationSec = asNumber(gateMovement?.gateDurationSec) ?? 0;
 
   recordingInProgress = true;
   recordingCancelled = false;
   waitingForStrokeGate = false;
-  poseStatus.textContent = "Recording 7s clip...";
+  poseStatus.textContent = "Recording 5s clip...";
   debugCapture("recording_started", {
     clipIndex: movementWindowClipCount + 1,
     movementFrameCount: workoutMovementFrames.length,
-    analysisWindowSec: getMovementWindowSec()
+    analysisWindowSec: getMovementWindowSec(),
+    gateStrokeCount: gateMovement?.strokeCount ?? null,
   });
 
   const recorder = new MediaRecorder(stream, recorderOptions);
@@ -1211,43 +1715,99 @@ async function recordClip() {
 
     if (recordingCancelled) {
       recordingCancelled = false;
+      resetMovementHistory();
       return;
     }
 
     if (!chunks.length) {
+      resetMovementHistory();
       poseStatus.textContent = lastInFrame ? readyStatusText : defaultStatusText;
       return;
     }
 
     const clipDurationSec = recordingDurationMs / 1000;
-    const localMovement = evaluateMovementGate(
+    const preferredSide = gateMovement?.dominantSide || null;
+    const trimmedRecordedSegment = trimFramesToActiveSegment(
       recordedLandmarkFrames,
-      clipDurationSec
+      clipDurationSec,
+      preferredSide,
     );
-    localMovement.clipCount = movementWindowClipCount;
-    logMovementDebug("recording_stopped_gate_eval", localMovement, {
+    const trimmedGateSegment = trimFramesToActiveSegment(
+      gateFrames,
+      gateDurationSec,
+      preferredSide,
+    );
+    const localMovement = evaluateMovementGate(
+      trimmedRecordedSegment.frames,
+      trimmedRecordedSegment.durationSec
+    );
+    const gateLooksCleaner = trimmedGateSegment.frames.length >= activeSegmentMinFrames && (
+      ((gateMovement?.movementQualified ?? false) && !localMovement.movementQualified) ||
+      ((asNumber(gateMovement?.strokeCount) ?? 0) > (asNumber(localMovement.strokeCount) ?? 0)) ||
+      (trimmedGateSegment.frames.length > trimmedRecordedSegment.frames.length)
+    );
+    const useGateFramesForAnalysis = gateLooksCleaner || (
+      trimmedGateSegment.frames.length >= trimmedRecordedSegment.frames.length &&
+      trimmedGateSegment.durationSec > trimmedRecordedSegment.durationSec
+    );
+    const scoringFrames = useGateFramesForAnalysis
+      ? trimmedGateSegment.frames
+      : trimmedRecordedSegment.frames;
+    const scoringDurationSec = useGateFramesForAnalysis
+      ? trimmedGateSegment.durationSec
+      : trimmedRecordedSegment.durationSec;
+    const scoringFrameSource = useGateFramesForAnalysis ? "gate_window" : "recorded_clip";
+    const mergedMovement = {
+      ...localMovement,
+      movementQualified: gateMovement?.movementQualified ?? localMovement.movementQualified,
+      movementReason: gateMovement?.movementReason || localMovement.movementReason,
+      strokeCount: Math.max(
+        asNumber(localMovement.strokeCount) ?? 0,
+        asNumber(gateMovement?.strokeCount) ?? 0,
+      ),
+      cadenceSpm: Math.max(
+        asNumber(localMovement.cadenceSpm) ?? 0,
+        asNumber(gateMovement?.cadenceSpm) ?? 0,
+      ),
+      rangeOfMotion: Math.max(
+        asNumber(localMovement.rangeOfMotion) ?? 0,
+        asNumber(gateMovement?.rangeOfMotion) ?? 0,
+      ),
+      signalStrategy: gateMovement?.signalStrategy || localMovement.signalStrategy,
+      signalSource: gateMovement?.signalSource || localMovement.signalSource,
+      analysisWindowSec: Math.max(
+        asNumber(localMovement.analysisWindowSec) ?? 0,
+        asNumber(gateMovement?.analysisWindowSec) ?? 0,
+      ),
+      preRecordStrokeCount: asNumber(gateMovement?.strokeCount) ?? null,
+      preRecordCadenceSpm: asNumber(gateMovement?.cadenceSpm) ?? null,
+      preRecordRangeOfMotion: asNumber(gateMovement?.rangeOfMotion) ?? null,
+    };
+    resetMovementHistory();
+    mergedMovement.clipCount = movementWindowClipCount;
+    logMovementDebug("recording_stopped_gate_eval", mergedMovement, {
       clipIndex: movementWindowClipCount
     });
-    if (!localMovement.movementQualified) {
-      waitingForStrokeGate = true;
-      poseStatus.textContent = "Take a few strokes before recording.";
-      return;
-    }
-
     const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
     let analysisPayload = null;
     try {
       analysisPayload = await analyzeLandmarkFrames(
-        recordedLandmarkFrames,
+        scoringFrames,
         createdAt,
-        clipDurationSec,
-        movementWindowClipCount + 1
+        scoringDurationSec,
+        movementWindowClipCount + 1,
+        {
+          dominantSideHint: gateMovement?.dominantSide || localMovement?.dominantSide || null,
+          signalStrategyHint: gateMovement?.signalStrategy || localMovement?.signalStrategy || null,
+        }
       );
       debugCapture("server_analysis_ok", {
         clipIndex: movementWindowClipCount,
         strokeCount: analysisPayload.strokeCount,
         movementReason: analysisPayload.movementReason,
-        score: analysisPayload.score
+        score: analysisPayload.score,
+        scoringFrameSource,
+        scoringFrameCount: scoringFrames.length,
       });
     } catch (err) {
       const payload = err && typeof err === "object" ? err.payload : null;
@@ -1293,15 +1853,45 @@ async function recordClip() {
       return;
     }
     movementWindowClipCount += 1;
-    rememberWorkoutAnalysis({ ...localMovement, ...analysisPayload });
+    const rememberedAnalysis = rememberWorkoutAnalysis({
+      ...analysisPayload,
+      ...mergedMovement,
+      anchorLandmark: analysisPayload?.anchorLandmark ?? null,
+      frameCount: analysisPayload?.frameCount ?? 0,
+      coordinateCount: analysisPayload?.coordinateCount ?? 0,
+      progressionStep: analysisPayload?.progressionStep ?? null,
+      meanDistance: analysisPayload?.meanDistance ?? null,
+      matchedPoints: analysisPayload?.matchedPoints ?? 0,
+      score: analysisPayload?.score ?? null,
+      summary: analysisPayload?.summary || mergedMovement.movementReason,
+      armsStraightScore: analysisPayload?.armsStraightScore ?? null,
+      backStraightScore: analysisPayload?.backStraightScore ?? null,
+    });
+    rememberClipDebugSnapshot(buildClipDebugSnapshot({
+      createdAt,
+      clipIndex: movementWindowClipCount,
+      recordedFrames: recordedLandmarkFrames,
+      gateFrames,
+      trimmedRecordedFrames: trimmedRecordedSegment.frames,
+      trimmedGateFrames: trimmedGateSegment.frames,
+      scoringFrames,
+      scoringFrameSource,
+      scoringDurationSec,
+      gateMovement,
+      localMovement,
+      mergedMovement,
+      analysisPayload,
+      persistedPayload: rememberedAnalysis?.persistedPayload ?? null,
+      aggregatePayload: rememberedAnalysis?.aggregatePayload ?? null,
+    }));
     debugCapture("clip_saved", {
       clipIndex: movementWindowClipCount,
-      strokeCount: (analysisPayload && analysisPayload.strokeCount) || localMovement.strokeCount
+      strokeCount: (analysisPayload && analysisPayload.strokeCount) || mergedMovement.strokeCount
     });
     poseStatus.textContent = reachedWorkoutClipLimit()
       ? workoutClipLimitReachedText
       : "Clip analyzed and saved";
-    
+
     playAudio("recordingSaved");
   };
 
@@ -1320,7 +1910,7 @@ async function saveWorkoutEntry(durationSec, startedAt, completedAt, workoutId =
     return;
   }
   const fallbackSummary = "Not enough valid strokes were detected to calculate a score.";
-  try {    
+  try {
     const response = await fetch(`${apiBase}/api/workouts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1395,14 +1985,16 @@ async function startCamera() {
   resetRecordingTimers();
   workoutStartAt = new Date().toISOString();
   scheduleWorkoutStopTimeout();
-  workoutMovementFrames = [];
-  workoutMovementFrameTimesMs = [];
+  resetMovementHistory();
   movementWindowClipCount = 0;
   lastMovementDebugLogAtMs = 0;
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  resetWorkoutAnalysisAggregate();
+  resetClipDebugSnapshots();
   updateCaptureSessionNotice();
+  ensureDebugExportControls();
   debugCapture("camera_started", {
     facingMode: preferredFacingMode
   });
@@ -1459,8 +2051,7 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
   lastVideoTime = -1;
   resetRecordingTimers();
   recordedLandmarkFrames = [];
-  workoutMovementFrames = [];
-  workoutMovementFrameTimesMs = [];
+  resetMovementHistory();
   movementWindowClipCount = 0;
   lastMovementDebugLogAtMs = 0;
 
@@ -1480,12 +2071,18 @@ function stopCamera({ stopReason = "manual", completedAtOverride = null } = {}) 
       maxWorkoutDurationSec,
       Math.max(1, Math.round(durationMs / 1000))
     );
+    console.log("SAVING WORKOUT", {
+      latestWorkoutAnalysis,
+      latestWorkoutScore,
+      latestWorkoutAnalysisText
+    });
     saveWorkoutEntry(durationSec, workoutStartAt, completedAt, workoutId, latestWorkoutAnalysis, latestWorkoutAnalysisText, latestWorkoutScore);
   }
   workoutStartAt = null;
   latestWorkoutAnalysis = null;
   latestWorkoutAnalysisText = "";
   latestWorkoutScore = null;
+  resetWorkoutAnalysisAggregate();
   workoutId = null;
   if (stopReason !== "time-limit") {
     updateCaptureSessionNotice();
@@ -1712,7 +2309,11 @@ function loop() {
           waitingForStrokeGate = false;
           inFrameMs = 0;
           nextAllowedRecordTime = frameTime + recordingCooldownMs;
-          recordClip();
+          recordClip({
+            ...liveMovement,
+            gateFrames: workoutMovementFrames,
+            gateDurationSec: movementWindowSec,
+          });
         }
       } else if (
         captureDebugEnabled &&
@@ -1761,7 +2362,11 @@ if (switchCameraBtn) {
 
 setupCameraSwitchControl();
 applyViewportMirrorState();
+ensureDebugExportControls();
 window.__rowlyticsCaptureDebugEnabled = captureDebugEnabled;
+window.__rowlyticsCaptureExportEnabled = captureExportEnabled;
+window.__rowlyticsExportLastClipDebugSnapshot = exportLastClipDebugSnapshot;
+window.__rowlyticsExportAllClipDebugSnapshots = exportAllClipDebugSnapshots;
 window.__rowlyticsCaptureState = () => ({
   inFrameMs: Number(inFrameMs.toFixed(0)),
   recordingInProgress,
@@ -1776,7 +2381,10 @@ window.__rowlyticsCaptureState = () => ({
   requestedPoseModel,
   modelCandidates: MP_MODEL_CANDIDATE_PATHS.map((item) => item.key),
   latestWorkoutAnalysis,
+  latestClipDebugSnapshot,
+  workoutClipDebugSnapshots,
 });
 debugCapture("debug_enabled", {
-  enabled: captureDebugEnabled
+  enabled: captureDebugEnabled,
+  exportEnabled: captureExportEnabled
 });

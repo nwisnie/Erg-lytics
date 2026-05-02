@@ -59,5 +59,8 @@ data-workout-detail-base="{{ url_for('public.workout_summary_detail', workout_id
 {% endblock %}
 
 {% block scripts %}
-  <script type="module" src="{{ url_for('static', filename='js/capture_workout.js') }}"></script>
+  <script
+    type="module"
+    src="{{ url_for('static', filename='js/capture_workout.js', v='20260427f') }}"
+  ></script>
 {% endblock %}

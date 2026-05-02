@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import math
 import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -112,10 +113,17 @@ SIDE_PROFILE_LANDMARKS = {
         "right_ankle",
     ),
 }
+SIDE_PROFILE_LANDMARK_INDICES = {
+    "left": (11, 13, 15, 23, 25, 27),
+    "right": (12, 14, 16, 24, 26, 28),
+}
 # Landmarks below this visibility threshold are ignored.
 # This means lighting, clothing, body occlusion, camera quality, and framing
 # can disproportionately reduce usable data and degrade scoring reliability.
 MIN_VISIBILITY_FOR_ANALYSIS = 0.12
+FRAME_EDGE_MARGIN = 0.06
+MIN_ACTIVE_SEGMENT_FRAMES = 6
+MIN_SIDE_PROFILE_VISIBLE_POINTS = 4
 MIN_STROKES_REQUIRED = 3
 MIN_RANGE_OF_MOTION = 0.12
 MIN_STROKE_CYCLE_SEC = 0.35
@@ -128,14 +136,18 @@ ANGLE_MIN_STROKE_AMPLITUDE = 0.006
 ANGLE_STROKE_AMPLITUDE_SCALE = 0.11
 MOTION_SPIKE_MAX_DELTA_PER_SEC = 1.2
 MOTION_SPIKE_BASE_DELTA = 0.075
-ARMS_STRAIGHT_PROGRESS_MAX = 0.8
-ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG = 30.0
-ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG = 78.0
+ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG = 6.0
+ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG = 60.0
 ARMS_STRAIGHT_MIN_POINTS = 3
-BACK_STRAIGHT_PROGRESS_MAX = 0.9
-BACK_STRAIGHT_FULL_CREDIT_DEG = 132.0
-BACK_STRAIGHT_ZERO_CREDIT_DEG = 88.0
+BACK_STRAIGHT_FULL_CREDIT_DEG = 118.0
+BACK_STRAIGHT_ZERO_CREDIT_DEG = 78.0
 BACK_STRAIGHT_MIN_POINTS = 3
+ARMS_STRAIGHT_SCORE_PERCENTILE = 0.10
+BACK_STRAIGHT_SCORE_PERCENTILE = 0.25
+ARMS_DRIVE_REACH_PERCENTILE = 0.70
+ARMS_DRIVE_MAX_PROGRESSION_STEP = 0.85
+HEAD_LINE_FULL_CREDIT_NORM = 0.05
+HEAD_LINE_ZERO_CREDIT_NORM = 0.18
 MAX_WORKOUT_DURATION_SEC = 60 * 60
 MAX_DAILY_RECORDING_UPLOAD_SEC = 2 * 60 * 60
 
@@ -158,6 +170,103 @@ def _coerce_positive_duration_seconds(value):
     if duration is None or duration <= 0:
         return None
     return int(round(duration))
+
+
+def _landmark_visible_in_frame(
+    frame,
+    landmark_index,
+    *,
+    visibility_floor=MIN_VISIBILITY_FOR_ANALYSIS,
+    margin=FRAME_EDGE_MARGIN,
+):
+    if not isinstance(frame, list) or landmark_index >= len(frame):
+        return None
+
+    landmark = frame[landmark_index]
+    if not isinstance(landmark, dict):
+        return None
+
+    x_val = _coerce_float(landmark.get("x"))
+    y_val = _coerce_float(landmark.get("y"))
+    visibility = _coerce_float(landmark.get("visibility"))
+    if x_val is None or y_val is None:
+        return None
+    if visibility is not None and visibility < visibility_floor:
+        return None
+    if not (margin <= x_val <= 1 - margin and margin <= y_val <= 1 - margin):
+        return None
+
+    return landmark
+
+
+def _frame_has_side_profile_chain(frame, side_name):
+    indices = SIDE_PROFILE_LANDMARK_INDICES[side_name]
+    visible_count = sum(
+        1 for landmark_index in indices if _landmark_visible_in_frame(frame, landmark_index)
+    )
+    shoulder_visible = _landmark_visible_in_frame(frame, indices[0]) is not None
+    hip_visible = _landmark_visible_in_frame(frame, indices[3]) is not None
+    return (
+        shoulder_visible
+        and hip_visible
+        and visible_count >= MIN_SIDE_PROFILE_VISIBLE_POINTS
+    )
+
+
+def _trim_frames_to_active_segment(frames, clip_duration_sec, dominant_side_hint=None):
+    if not isinstance(frames, list) or len(frames) < 2:
+        return frames, clip_duration_sec
+
+    if dominant_side_hint in SIDE_PROFILE_LANDMARK_INDICES:
+        candidate_sides = (dominant_side_hint,)
+    else:
+        candidate_sides = ("left", "right")
+
+    best_start = None
+    best_end = None
+    current_start = None
+
+    for frame_index, frame in enumerate(frames):
+        frame_is_valid = any(
+            _frame_has_side_profile_chain(frame, side_name)
+            for side_name in candidate_sides
+        )
+        if frame_is_valid and current_start is None:
+            current_start = frame_index
+            continue
+        if frame_is_valid:
+            continue
+        if current_start is None:
+            continue
+
+        current_end = frame_index - 1
+        if (
+            best_start is None
+            or (current_end - current_start) > (best_end - best_start)
+        ):
+            best_start = current_start
+            best_end = current_end
+        current_start = None
+
+    if current_start is not None:
+        current_end = len(frames) - 1
+        if (
+            best_start is None
+            or (current_end - current_start) > (best_end - best_start)
+        ):
+            best_start = current_start
+            best_end = current_end
+
+    if best_start is None or best_end is None:
+        return frames, clip_duration_sec
+
+    trimmed_frames = frames[best_start:best_end + 1]
+    if len(trimmed_frames) < MIN_ACTIVE_SEGMENT_FRAMES:
+        return frames, clip_duration_sec
+
+    frame_interval_sec = clip_duration_sec / max(len(frames) - 1, 1)
+    trimmed_duration_sec = frame_interval_sec * max(len(trimmed_frames) - 1, 1)
+    return trimmed_frames, round(trimmed_duration_sec, 6)
 
 
 def _parse_iso_datetime(value):
@@ -405,6 +514,15 @@ def _detect_dominant_side(coordinates):
     return "left" if counts.get("left", 0) >= counts.get("right", 0) else "right"
 
 
+def _resolve_dominant_side(coordinates, dominant_side_hint=None):
+    if dominant_side_hint in SIDE_PROFILE_LANDMARKS:
+        hinted_landmarks = set(SIDE_PROFILE_LANDMARKS[dominant_side_hint])
+        hinted_count = sum(1 for item in coordinates if item["name"] in hinted_landmarks)
+        if hinted_count >= 6:
+            return dominant_side_hint
+    return _detect_dominant_side(coordinates)
+
+
 def _select_anchor_landmark(coordinates, candidates=None):
     best_name = None
     best_coords = []
@@ -431,10 +549,22 @@ def _select_anchor_landmark(coordinates, candidates=None):
     return best_name, sorted(best_coords, key=lambda item: item["time"])
 
 
-def _alignment_score(mean_distance):
-    if mean_distance is None:
+def _consistency_score(mean_spread, *, shape_aware=False):
+    if mean_spread is None:
         return None
-    raw_score = 100 - (mean_distance * 140)
+    if shape_aware:
+        adjusted_spread = max(0.0, mean_spread - 0.04)
+        falloff_scale = 0.12
+        falloff_power = 1.2
+    else:
+        adjusted_spread = max(0.0, mean_spread - 0.02)
+        falloff_scale = 0.10
+        falloff_power = 1.2
+
+    if adjusted_spread <= 1e-9:
+        return 100.0
+
+    raw_score = 100.0 * math.exp(-((adjusted_spread / falloff_scale) ** falloff_power))
     return round(max(0, min(100, raw_score)), 2)
 
 
@@ -452,16 +582,373 @@ def _landmark_weight(name):
     return 1.0
 
 
+def _group_coordinates_by_time(coordinates):
+    grouped = {}
+    for item in coordinates:
+        grouped.setdefault(item["time"], {})[item["name"]] = item
+    return grouped
+
+
+def _percentile(values, quantile):
+    if not values:
+        return None
+    ordered = sorted(values)
+    clamped_quantile = min(1.0, max(0.0, float(quantile)))
+    index = int(round((len(ordered) - 1) * clamped_quantile))
+    return ordered[index]
+
+
+def _score_between_thresholds(value, full_credit, zero_credit, *, higher_is_better):
+    if value is None:
+        return None
+
+    if higher_is_better:
+        if value >= full_credit:
+            return 100.0
+        if value <= zero_credit:
+            return 0.0
+        return ((value - zero_credit) / (full_credit - zero_credit)) * 100.0
+
+    if value <= full_credit:
+        return 100.0
+    if value >= zero_credit:
+        return 0.0
+    return ((zero_credit - value) / (zero_credit - full_credit)) * 100.0
+
+
+def _variation_ratio(values):
+    if not values or len(values) < 2:
+        return 0.0
+    mean_value = sum(values) / len(values)
+    if mean_value <= 1e-6:
+        return 0.0
+    variance = sum((value - mean_value) ** 2 for value in values) / len(values)
+    return (variance ** 0.5) / mean_value
+
+
+def _estimate_progression_step(anchor_progression, target_time):
+    if not anchor_progression:
+        return None
+
+    progression_points = sorted(
+        (
+            (item["time"], item["progression_step"])
+            for item in anchor_progression
+            if item.get("progression_step") is not None
+        ),
+        key=lambda item: item[0],
+    )
+    if not progression_points:
+        return None
+
+    return _interpolate_series_value(progression_points, target_time)
+
+
+def _fallback_timing_penalty(anchor_coordinates):
+    if not anchor_coordinates or len(anchor_coordinates) < 5:
+        return 0.0
+
+    x_range = (
+        max(point["x"] for point in anchor_coordinates)
+        - min(point["x"] for point in anchor_coordinates)
+    )
+    y_range = (
+        max(point["y"] for point in anchor_coordinates)
+        - min(point["y"] for point in anchor_coordinates)
+    )
+    axis_name = "x" if x_range >= y_range else "y"
+    axis_range = max(x_range, y_range)
+    reset_threshold = max(0.01, axis_range * 0.18)
+    segment_lengths = []
+    segment_start = 0
+
+    for index in range(1, len(anchor_coordinates)):
+        delta_value = (
+            anchor_coordinates[index][axis_name]
+            - anchor_coordinates[index - 1][axis_name]
+        )
+        if delta_value <= -reset_threshold:
+            segment_lengths.append(index - segment_start)
+            segment_start = index
+
+    segment_lengths.append(len(anchor_coordinates) - segment_start)
+    segment_lengths = [length for length in segment_lengths if length >= 2]
+    if len(segment_lengths) < 2:
+        return 0.0
+
+    return min(0.05, _variation_ratio(segment_lengths) * 0.015)
+
+
+def _interpolate_series_value(points, target_t):
+    if not points:
+        return None
+    if target_t <= points[0][0]:
+        return points[0][1]
+    if target_t >= points[-1][0]:
+        return points[-1][1]
+
+    for (time_a, value_a), (time_b, value_b) in zip(points, points[1:]):
+        if time_a <= target_t <= time_b:
+            if time_b == time_a:
+                return value_a
+            ratio = (target_t - time_a) / (time_b - time_a)
+            return value_a + ((value_b - value_a) * ratio)
+
+    return points[-1][1]
+
+
+def _extract_valid_stroke_cycles(turning_points, min_amplitude, min_cycle_sec, max_cycle_sec):
+    if len(turning_points) < 3:
+        return []
+
+    cycles = []
+    index = 0
+    while index + 2 < len(turning_points):
+        first = turning_points[index]
+        middle = turning_points[index + 1]
+        third = turning_points[index + 2]
+
+        if first["type"] == third["type"] and first["type"] != middle["type"]:
+            amp_1 = abs(middle["value"] - first["value"])
+            amp_2 = abs(third["value"] - middle["value"])
+            cycle_time = third["time"] - first["time"]
+
+            if (
+                amp_1 >= min_amplitude
+                and amp_2 >= min_amplitude
+                and min_cycle_sec <= cycle_time <= max_cycle_sec
+            ):
+                cycles.append({
+                    "duration": cycle_time,
+                    "amplitude": (amp_1 + amp_2) / 2.0,
+                })
+                index += 2
+                continue
+
+        index += 1
+
+    return cycles
+
+
+def _compute_cycle_shape_spread(
+    motion_series,
+    turning_points,
+    min_amplitude,
+    min_cycle_sec,
+    max_cycle_sec,
+    sample_count=20,
+):
+    if len(motion_series) < 6 or len(turning_points) < 3:
+        return None
+
+    cycle_samples = []
+    index = 0
+    while index + 2 < len(turning_points):
+        first = turning_points[index]
+        middle = turning_points[index + 1]
+        third = turning_points[index + 2]
+
+        if first["type"] == third["type"] and first["type"] != middle["type"]:
+            amp_1 = abs(middle["value"] - first["value"])
+            amp_2 = abs(third["value"] - middle["value"])
+            cycle_time = third["time"] - first["time"]
+
+            if (
+                amp_1 >= min_amplitude
+                and amp_2 >= min_amplitude
+                and min_cycle_sec <= cycle_time <= max_cycle_sec
+            ):
+                segment = [
+                    point for point in motion_series
+                    if first["time"] <= point["time"] <= third["time"]
+                ]
+                if len(segment) >= 4:
+                    start_time = first["time"]
+                    duration = max(third["time"] - first["time"], 1e-6)
+                    normalized_points = [
+                        ((point["time"] - start_time) / duration, point["value"])
+                        for point in segment
+                    ]
+                    low_value = min(value for _, value in normalized_points)
+                    high_value = max(value for _, value in normalized_points)
+                    value_range = max(high_value - low_value, 1e-6)
+                    normalized_cycle = []
+                    for step in range(sample_count + 1):
+                        normalized_t = step / sample_count
+                        sampled_value = _interpolate_series_value(
+                            normalized_points,
+                            normalized_t,
+                        )
+                        normalized_cycle.append((sampled_value - low_value) / value_range)
+                    cycle_samples.append(normalized_cycle)
+                index += 2
+                continue
+
+        index += 1
+
+    if len(cycle_samples) < 2:
+        return None
+
+    bucket_spreads = []
+    for bucket_values in zip(*cycle_samples):
+        mean_value = sum(bucket_values) / len(bucket_values)
+        variance = sum((value - mean_value) ** 2 for value in bucket_values) / len(bucket_values)
+        bucket_spreads.append(variance ** 0.5)
+
+    if not bucket_spreads:
+        return None
+
+    return sum(bucket_spreads) / len(bucket_spreads)
+
+
+def _compute_consistency_metrics(
+    side_coordinates,
+    anchor_progression,
+    movement_metrics=None,
+    anchor_coordinates=None,
+):
+    if not side_coordinates or not anchor_progression:
+        return {
+            "meanDistance": None,
+            "matchedPoints": 0,
+            "shapeSpread": None,
+            "timingPenalty": 0.0,
+            "amplitudePenalty": 0.0,
+        }
+
+    assembler = PracticeStrokeAssembler()
+    frames_by_time = _group_coordinates_by_time(side_coordinates)
+    bucketed_points = {}
+
+    for timestamp in sorted(frames_by_time.keys()):
+        frame = frames_by_time[timestamp]
+        try:
+            progression = assembler.match_progression_interval(
+                anchor_progression,
+                list(frame.values()),
+            )
+        except ValueError:
+            continue
+
+        step = round(float(progression.get("progression_step", 0.0)), 4)
+        for name, coord in frame.items():
+            bucketed_points.setdefault((step, name), []).append((coord["x"], coord["y"]))
+
+    weighted_total = 0.0
+    weight_sum = 0.0
+    matched_points = 0
+
+    for (step, name), points in bucketed_points.items():
+        if len(points) < 2:
+            continue
+
+        mean_x = sum(point[0] for point in points) / len(points)
+        mean_y = sum(point[1] for point in points) / len(points)
+        rms_spread = (
+            sum(((point[0] - mean_x) ** 2) + ((point[1] - mean_y) ** 2) for point in points)
+            / len(points)
+        ) ** 0.5
+        clamped_spread = min(rms_spread, 0.18)
+        weight = _landmark_weight(name)
+        weighted_total += clamped_spread * weight
+        weight_sum += weight
+        matched_points += len(points)
+
+    spatial_spread = (weighted_total / weight_sum) if weight_sum else None
+    shape_spread = None
+    timing_penalty = 0.0
+    amplitude_penalty = 0.0
+    if movement_metrics:
+        shape_spread = movement_metrics.get("cycleShapeSpread")
+        cycle_durations = movement_metrics.get("cycleDurations") or []
+        if len(cycle_durations) >= 2:
+            timing_penalty = min(0.08, _variation_ratio(cycle_durations) * 0.12)
+        else:
+            timing_penalty = _fallback_timing_penalty(anchor_coordinates)
+        amplitude_penalty = min(
+            0.08,
+            _variation_ratio(movement_metrics.get("cycleAmplitudes") or []) * 0.14,
+        )
+
+    combined_spread = None
+    if spatial_spread is not None:
+        if shape_spread is not None:
+            combined_spread = spatial_spread + (timing_penalty * 1.0) + (amplitude_penalty * 1.0)
+        else:
+            combined_spread = (spatial_spread * 3.0) + timing_penalty + amplitude_penalty
+
+        if (
+            movement_metrics
+            and 0 < int(movement_metrics.get("strokeCount") or 0) < MIN_STROKES_REQUIRED
+        ):
+            combined_spread += 0.015
+
+    return {
+        "meanDistance": combined_spread,
+        "spatialSpread": spatial_spread,
+        "shapeSpread": shape_spread,
+        "matchedPoints": matched_points,
+        "timingPenalty": timing_penalty,
+        "amplitudePenalty": amplitude_penalty,
+    }
+
+
 def _summarize_alignment(score):
     if score is None:
-        return "Not enough matching coordinates to calculate a consistency score for this clip."
+        return "Not enough repeated positions to calculate a consistency score for this clip."
     if score >= 85:
-        return "Great consistency for this clip."
+        return "Great stroke-to-stroke consistency for this clip."
     if score >= 65:
-        return "Solid consistency, but there is room to tighten it further."
+        return "Solid repeatability, but there is room to tighten it further."
     if score >= 40:
         return "Moderate drift detected. Focus on more repeatable body positions."
     return "Large drift detected. Recheck posture and frame setup."
+
+
+def _finalize_form_score(scores):
+    if not scores:
+        return None
+    average_score = sum(scores) / len(scores)
+    if len(scores) < 2:
+        return round(average_score, 2)
+    floor_score = _percentile(scores, 0.25)
+    if floor_score is None:
+        floor_score = average_score
+    variance = sum((score - average_score) ** 2 for score in scores) / len(scores)
+    stability_penalty = min(22.0, (variance ** 0.5) * 0.28)
+    weighted_score = (average_score * 0.35) + (floor_score * 0.65)
+    return round(max(0.0, weighted_score - stability_penalty), 2)
+
+
+def _combine_analysis_score(
+    consistency_score,
+    arms_score=None,
+    back_score=None,
+    timing_penalty=0.0,
+    amplitude_penalty=0.0,
+):
+    if consistency_score is None:
+        return None
+
+    combined_score = consistency_score
+
+    # Convert normalized consistency penalties into score-point deductions.
+    timing_deduction = max(0.0, timing_penalty or 0.0) * 250.0
+    amplitude_deduction = max(0.0, amplitude_penalty or 0.0) * 150.0
+    combined_score -= timing_deduction + amplitude_deduction
+
+    # If consistency is excellent, avoid synthetic arm/back geometry tanking it.
+    # But timing/amplitude penalties still count.
+    if consistency_score >= 90.0:
+        return round(max(0.0, min(100.0, combined_score)), 2)
+
+    if arms_score is not None and arms_score < 75.0:
+        combined_score -= (75.0 - arms_score) * 0.8
+
+    if back_score is not None and back_score < 75.0:
+        combined_score -= (75.0 - back_score) * 0.8
+
+    return round(max(0.0, min(100.0, combined_score)), 2)
 
 
 def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
@@ -474,37 +961,48 @@ def _compute_elbow_angle_normalized(shoulder, elbow, wrist):
         return None
 
 
-def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression):
-    if not side_coordinates or not anchor_progression:
+def _forward_offset_normalized(start_point, end_point, dominant_side, torso_length):
+    if not start_point or not end_point or torso_length <= 1e-6:
+        return None
+    if dominant_side == "left":
+        return (end_point["x"] - start_point["x"]) / torso_length
+    return (start_point["x"] - end_point["x"]) / torso_length
+
+
+def _line_deviation_normalized(line_start, line_end, point, line_length):
+    if not line_start or not line_end or not point or line_length <= 1e-6:
+        return None
+
+    numerator = abs(
+        ((line_end["x"] - line_start["x"]) * (line_start["y"] - point["y"]))
+        - ((line_start["x"] - point["x"]) * (line_end["y"] - line_start["y"]))
+    )
+    return numerator / line_length
+
+
+def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression=None):
+    if not side_coordinates:
         return None
 
     shoulder_name = f"{dominant_side}_shoulder"
     elbow_name = f"{dominant_side}_elbow"
     wrist_name = f"{dominant_side}_wrist"
-    assembler = PracticeStrokeAssembler()
+    hip_name = f"{dominant_side}_hip"
+    by_time = _group_coordinates_by_time(side_coordinates)
 
-    by_time = {}
-    for item in side_coordinates:
-        by_time.setdefault(item["time"], {})[item["name"]] = item
-
-    straightness_scores = []
+    candidate_frames = []
     for timestamp in sorted(by_time.keys()):
         frame = by_time[timestamp]
         shoulder = frame.get(shoulder_name)
         elbow = frame.get(elbow_name)
         wrist = frame.get(wrist_name)
+        hip = frame.get(hip_name)
         if not shoulder or not elbow or not wrist:
             continue
 
-        try:
-            progression = assembler.match_progression_interval(
-                anchor_progression,
-                list(frame.values()),
-            )
-        except ValueError:
-            continue
+        progression_step = _estimate_progression_step(anchor_progression, timestamp)
 
-        if progression.get("progression_step", 1.0) > ARMS_STRAIGHT_PROGRESS_MAX:
+        if progression_step is not None and progression_step >= ARMS_DRIVE_MAX_PROGRESSION_STEP:
             continue
 
         angle_value = _compute_elbow_angle_normalized(shoulder, elbow, wrist)
@@ -512,84 +1010,140 @@ def _score_arms_straightness(side_coordinates, dominant_side, anchor_progression
             continue
 
         bend_degrees = max(0.0, (1.0 - angle_value) * 180.0)
-        if bend_degrees <= ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG:
-            straightness_scores.append(100.0)
-            continue
-
-        if bend_degrees >= ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG:
-            straightness_scores.append(0.0)
-            continue
-
-        remaining = ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG - bend_degrees
-        scoring_window = (
-            ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG
-            - ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG
+        straightness_score = _score_between_thresholds(
+            bend_degrees,
+            ARMS_STRAIGHT_FULL_CREDIT_BEND_DEG,
+            ARMS_STRAIGHT_ZERO_CREDIT_BEND_DEG,
+            higher_is_better=False,
         )
-        straightness_scores.append((remaining / scoring_window) * 100.0)
+        if straightness_score is None:
+            continue
+
+        reach_norm = None
+        if hip and shoulder:
+            torso_length = math.hypot(
+                shoulder["x"] - hip["x"],
+                shoulder["y"] - hip["y"],
+            )
+            reach_norm = _forward_offset_normalized(
+                shoulder,
+                wrist,
+                dominant_side,
+                torso_length,
+            )
+        candidate_frames.append({
+            "progression": progression_step,
+            "score": straightness_score,
+            "reach": reach_norm,
+        })
+    straightness_scores = [frame["score"] for frame in candidate_frames]
 
     if len(straightness_scores) < ARMS_STRAIGHT_MIN_POINTS:
         return None
 
-    return round(sum(straightness_scores) / len(straightness_scores), 2)
+    p25 = _percentile(straightness_scores, 0.25)
+    p50 = _percentile(straightness_scores, 0.50)
+    p75 = _percentile(straightness_scores, 0.75)
+    average = sum(straightness_scores) / len(straightness_scores)
+
+    if p25 is None or p50 is None or p75 is None:
+        return _finalize_form_score(straightness_scores)
+
+    low_score_ratio = len([
+        score for score in straightness_scores
+        if score < 60
+    ]) / len(straightness_scores)
+
+    score = (
+        0.25 * p75 +
+        0.35 * p50 +
+        0.25 * p25 +
+        0.15 * average
+    )
+
+    # punish workouts that spend a lot of time with bent arms
+    score -= low_score_ratio * 18
+
+    return round(max(0.0, min(100.0, score)), 2)
 
 
-def _score_back_straightness(side_coordinates, dominant_side, anchor_progression):
-    if not side_coordinates or not anchor_progression:
+def _score_back_straightness(side_coordinates, dominant_side, anchor_progression=None):
+    if not side_coordinates:
         return None
 
     hip_name = f"{dominant_side}_hip"
     shoulder_name = f"{dominant_side}_shoulder"
     ear_name = f"{dominant_side}_ear"
-    assembler = PracticeStrokeAssembler()
+    by_time = _group_coordinates_by_time(side_coordinates)
 
-    by_time = {}
-    for item in side_coordinates:
-        by_time.setdefault(item["time"], {})[item["name"]] = item
+    def _collect_scores(head_name, include_head_position=True):
+        scores = []
+        for timestamp in sorted(by_time.keys()):
+            frame = by_time[timestamp]
+            hip = frame.get(hip_name)
+            shoulder = frame.get(shoulder_name)
+            head = frame.get(head_name)
+            if not hip or not shoulder or not head:
+                continue
 
-    straightness_scores = []
-    for timestamp in sorted(by_time.keys()):
-        frame = by_time[timestamp]
-        hip = frame.get(hip_name)
-        shoulder = frame.get(shoulder_name)
-        head = frame.get(ear_name) or frame.get("nose")
-        if not hip or not shoulder or not head:
-            continue
+            angle_value = _compute_elbow_angle_normalized(hip, shoulder, head)
+            if angle_value is None:
+                continue
 
-        try:
-            progression = assembler.match_progression_interval(
-                anchor_progression,
-                list(frame.values()),
+            torso_length = math.hypot(
+                shoulder["x"] - hip["x"],
+                shoulder["y"] - hip["y"],
             )
-        except ValueError:
-            continue
+            if torso_length <= 1e-6:
+                continue
 
-        if progression.get("progression_step", 1.0) > BACK_STRAIGHT_PROGRESS_MAX:
-            continue
+            back_angle_degrees = angle_value * 180.0
+            back_angle_score = _score_between_thresholds(
+                back_angle_degrees,
+                BACK_STRAIGHT_FULL_CREDIT_DEG,
+                BACK_STRAIGHT_ZERO_CREDIT_DEG,
+                higher_is_better=True,
+            )
+            if back_angle_score is None:
+                continue
 
-        angle_value = _compute_elbow_angle_normalized(hip, shoulder, head)
-        if angle_value is None:
-            continue
+            if not include_head_position:
+                scores.append(back_angle_score)
+                continue
 
-        back_angle_degrees = angle_value * 180.0
-        if back_angle_degrees >= BACK_STRAIGHT_FULL_CREDIT_DEG:
-            straightness_scores.append(100.0)
-            continue
+            head_line_deviation = _line_deviation_normalized(
+                hip,
+                shoulder,
+                head,
+                torso_length,
+            )
+            head_position_score = _score_between_thresholds(
+                head_line_deviation,
+                HEAD_LINE_FULL_CREDIT_NORM,
+                HEAD_LINE_ZERO_CREDIT_NORM,
+                higher_is_better=False,
+            )
+            if head_position_score is None:
+                continue
 
-        if back_angle_degrees <= BACK_STRAIGHT_ZERO_CREDIT_DEG:
-            straightness_scores.append(0.0)
-            continue
+            scores.append(math.sqrt(back_angle_score * head_position_score))
 
-        scoring_window = (
-            BACK_STRAIGHT_FULL_CREDIT_DEG
-            - BACK_STRAIGHT_ZERO_CREDIT_DEG
-        )
-        earned = back_angle_degrees - BACK_STRAIGHT_ZERO_CREDIT_DEG
-        straightness_scores.append((earned / scoring_window) * 100.0)
+        return scores
+
+    straightness_scores = _collect_scores(ear_name, include_head_position=True)
+    if len(straightness_scores) < BACK_STRAIGHT_MIN_POINTS:
+        straightness_scores = _collect_scores("nose", include_head_position=False)
 
     if len(straightness_scores) < BACK_STRAIGHT_MIN_POINTS:
         return None
 
-    return round(sum(straightness_scores) / len(straightness_scores), 2)
+    percentile_score = _percentile(straightness_scores, BACK_STRAIGHT_SCORE_PERCENTILE)
+    if percentile_score is None:
+        return _finalize_form_score(straightness_scores)
+
+    average_score = sum(straightness_scores) / len(straightness_scores)
+    blended_scores = [percentile_score, average_score, *straightness_scores]
+    return _finalize_form_score(blended_scores)
 
 
 # Motion features are currently derived from upper-body landmark relationships.
@@ -782,7 +1336,12 @@ def _count_strokes(turning_points, min_amplitude, min_cycle_sec, max_cycle_sec):
     return stroke_count
 
 
-def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
+def _evaluate_movement_gate(
+    side_coordinates,
+    dominant_side,
+    clip_duration_sec,
+    preferred_signal_strategy=None,
+):
     candidates = _extract_motion_series_candidates(side_coordinates, dominant_side)
 
     def _evaluate_candidate(candidate):
@@ -812,6 +1371,19 @@ def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
             range_of_motion * candidate.get("strokeAmplitudeScale", STROKE_AMPLITUDE_SCALE),
         )
         turning_points = _find_turning_points(smoothed_series)
+        valid_cycles = _extract_valid_stroke_cycles(
+            turning_points,
+            min_amplitude=amplitude_threshold,
+            min_cycle_sec=MIN_STROKE_CYCLE_SEC,
+            max_cycle_sec=MAX_STROKE_CYCLE_SEC,
+        )
+        cycle_shape_spread = _compute_cycle_shape_spread(
+            smoothed_series,
+            turning_points,
+            min_amplitude=amplitude_threshold,
+            min_cycle_sec=MIN_STROKE_CYCLE_SEC,
+            max_cycle_sec=MAX_STROKE_CYCLE_SEC,
+        )
         stroke_count = _count_strokes(
             turning_points,
             min_amplitude=amplitude_threshold,
@@ -853,6 +1425,10 @@ def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
             "signalDropCount": signal_drop_count,
             "signalSource": smoothed_series[0]["source"] if smoothed_series else "n/a",
             "analysisWindowSec": round(active_duration_sec, 2),
+            "cycleDurations": [round(cycle["duration"], 6) for cycle in valid_cycles],
+            "cycleAmplitudes": [round(cycle["amplitude"], 6) for cycle in valid_cycles],
+            "cycleShapeSpread": round(cycle_shape_spread, 6)
+            if cycle_shape_spread is not None else None,
         }
 
     evaluated = [_evaluate_candidate(candidate) for candidate in candidates]
@@ -869,7 +1445,21 @@ def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
             "signalDropCount": 0,
             "signalSource": "n/a",
             "analysisWindowSec": round(float(clip_duration_sec), 2),
+            "cycleDurations": [],
+            "cycleAmplitudes": [],
+            "cycleShapeSpread": None,
         }
+
+    if preferred_signal_strategy:
+        preferred = next(
+            (
+                candidate for candidate in evaluated
+                if candidate.get("signalStrategy") == preferred_signal_strategy
+            ),
+            None,
+        )
+        if preferred is not None:
+            return preferred
 
     best = evaluated[0]
     for candidate in evaluated[1:]:
@@ -897,12 +1487,28 @@ def _evaluate_movement_gate(side_coordinates, dominant_side, clip_duration_sec):
     return best
 
 
-def _analyze_landmark_frames(frames, clip_duration_sec):
-    coordinates = _build_coordinate_series(frames, clip_duration_sec)
-    coordinates = _smooth_coordinates(coordinates)
-    dominant_side = _detect_dominant_side(coordinates)
+def _analyze_landmark_frames(
+    frames,
+    clip_duration_sec,
+    *,
+    require_movement_gate=True,
+    dominant_side_hint=None,
+    signal_strategy_hint=None,
+):
+    frames, clip_duration_sec = _trim_frames_to_active_segment(
+        frames,
+        clip_duration_sec,
+        dominant_side_hint=dominant_side_hint,
+    )
+    raw_coordinates = _build_coordinate_series(frames, clip_duration_sec)
+    coordinates = _smooth_coordinates(raw_coordinates)
+    dominant_side = _resolve_dominant_side(
+        coordinates,
+        dominant_side_hint=dominant_side_hint,
+    )
     side_landmarks = set(SIDE_PROFILE_LANDMARKS[dominant_side]) | {"nose"}
     side_coordinates = [item for item in coordinates if item["name"] in side_landmarks]
+    raw_side_coordinates = [item for item in raw_coordinates if item["name"] in side_landmarks]
     if len(side_coordinates) < 2:
         raise ValueError("not enough side-profile landmarks found for analysis")
 
@@ -916,12 +1522,17 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
         side_coordinates,
         candidates=side_anchor_candidates,
     )
+    raw_anchor_name, raw_anchor_coords = _select_anchor_landmark(
+        raw_side_coordinates,
+        candidates=side_anchor_candidates,
+    )
     movement_metrics = _evaluate_movement_gate(
         side_coordinates,
         dominant_side,
         clip_duration_sec,
+        preferred_signal_strategy=signal_strategy_hint,
     )
-    if not movement_metrics["movementQualified"]:
+    if require_movement_gate and not movement_metrics["movementQualified"]:
         raise MovementGateError(
             movement_metrics["movementReason"],
             payload={
@@ -936,47 +1547,21 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
     progression_interval = 0.1
 
     anchor_progression = assembler.assemble_progression_steps(anchor_coords, progression_interval)
-
-    ideal_model = []
-    unique_names = sorted({item["name"] for item in side_coordinates})
-    for landmark_name in unique_names:
-        landmark_coords = [item for item in side_coordinates if item["name"] == landmark_name]
-        if len(landmark_coords) < 3:
-            continue
-        landmark_coords = sorted(landmark_coords, key=lambda item: item["time"])
-        steps = assembler.assemble_progression_steps(
-            landmark_coords,
-            progression_interval,
-        )
-        ideal_model.extend(steps)
-
-    if not ideal_model:
-        raise ValueError("unable to build an ideal alignment model from clip data")
-
-    latest_time = max(item["time"] for item in side_coordinates)
-    latest_coords = [item for item in side_coordinates if item["time"] == latest_time]
+    frames_by_time = _group_coordinates_by_time(side_coordinates)
+    latest_time = max(frames_by_time.keys())
+    latest_coords = list(frames_by_time[latest_time].values())
     current_progression = assembler.match_progression_interval(anchor_progression, latest_coords)
-    ideal_coordinate_set = assembler.get_ideal_coordinate_set(current_progression, ideal_model)
-
-    latest_by_name = {item["name"]: item for item in latest_coords}
-    weighted_total = 0.0
-    weight_sum = 0.0
-    distances = []
-    for ideal_coord in ideal_coordinate_set:
-        current_coord = latest_by_name.get(ideal_coord["name"])
-        if not current_coord:
-            continue
-        dx = current_coord["x"] - ideal_coord["x"]
-        dy = current_coord["y"] - ideal_coord["y"]
-        raw_distance = (dx * dx + dy * dy) ** 0.5
-        clamped_distance = min(raw_distance, 0.18)
-        weight = _landmark_weight(ideal_coord["name"])
-        weighted_total += clamped_distance * weight
-        weight_sum += weight
-        distances.append(clamped_distance)
-
-    mean_distance = (weighted_total / weight_sum) if weight_sum else None
-    score = _alignment_score(mean_distance)
+    consistency_metrics = _compute_consistency_metrics(
+        side_coordinates,
+        anchor_progression,
+        movement_metrics=movement_metrics,
+        anchor_coordinates=raw_anchor_coords if raw_anchor_name == anchor_name else anchor_coords,
+    )
+    mean_distance = consistency_metrics["meanDistance"]
+    score = _consistency_score(
+        mean_distance,
+        shape_aware=consistency_metrics["shapeSpread"] is not None,
+    )
     arms_straight_score = _score_arms_straightness(
         side_coordinates,
         dominant_side,
@@ -986,6 +1571,13 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
         side_coordinates,
         dominant_side,
         anchor_progression,
+    )
+    final_score = _combine_analysis_score(
+        score,
+        arms_straight_score,
+        back_straight_score,
+        timing_penalty=consistency_metrics["timingPenalty"],
+        amplitude_penalty=consistency_metrics["amplitudePenalty"],
     )
 
     return {
@@ -999,9 +1591,15 @@ def _analyze_landmark_frames(frames, clip_duration_sec):
         **movement_metrics,
         "progressionStep": current_progression.get("progression_step"),
         "meanDistance": round(mean_distance, 6) if mean_distance is not None else None,
-        "score": score,
-        "summary": _summarize_alignment(score),
-        "matchedPoints": len(distances),
+        "spatialSpread": round(consistency_metrics["spatialSpread"], 6)
+        if consistency_metrics["spatialSpread"] is not None else None,
+        "shapeSpread": round(consistency_metrics["shapeSpread"], 6)
+        if consistency_metrics["shapeSpread"] is not None else None,
+        "timingPenalty": round(consistency_metrics["timingPenalty"], 6),
+        "amplitudePenalty": round(consistency_metrics["amplitudePenalty"], 6),
+        "score": final_score,
+        "summary": _summarize_alignment(final_score),
+        "matchedPoints": consistency_metrics["matchedPoints"],
     }
 
 
@@ -2304,6 +2902,13 @@ def preview_workout_alignment():
     frames = data.get("frames")
     clip_duration_sec = _coerce_float(data.get("clipDurationSec"))
     clip_count = _coerce_float(data.get("clipCount"))
+    allow_partial_motion = bool(data.get("allowPartialMotion"))
+    dominant_side_hint = data.get("dominantSideHint")
+    signal_strategy_hint = data.get("signalStrategyHint")
+    if dominant_side_hint not in ("left", "right"):
+        dominant_side_hint = None
+    if signal_strategy_hint not in ("upper_body_translation", "elbow_angle"):
+        signal_strategy_hint = None
     if clip_duration_sec is None or clip_duration_sec <= 0:
         clip_duration_sec = 5.0
     if clip_count is not None and clip_count > 0:
@@ -2312,7 +2917,19 @@ def preview_workout_alignment():
         clip_count = None
 
     try:
-        result = _analyze_landmark_frames(frames, clip_duration_sec)
+        analyze_kwargs = {
+            "require_movement_gate": not allow_partial_motion,
+        }
+        if dominant_side_hint is not None:
+            analyze_kwargs["dominant_side_hint"] = dominant_side_hint
+        if signal_strategy_hint is not None:
+            analyze_kwargs["signal_strategy_hint"] = signal_strategy_hint
+
+        result = _analyze_landmark_frames(
+            frames,
+            clip_duration_sec,
+            **analyze_kwargs,
+        )
     except MovementGateError as err:
         payload = err.payload.copy()
         if clip_count is not None:
